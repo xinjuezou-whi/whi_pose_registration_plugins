@@ -19,6 +19,9 @@ namespace pose_registration_plugins
 {
     PlainPoseRegistration::PlainPoseRegistration()
     {
+        /// node version and copyright announcement
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01" << std::endl;
+	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
 
     }
 

@@ -12,6 +12,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   whi_pose_registration
+  laser_geometry
+  pcl_ros
 )
 
 ## System dependencies are found with CMake's conventions

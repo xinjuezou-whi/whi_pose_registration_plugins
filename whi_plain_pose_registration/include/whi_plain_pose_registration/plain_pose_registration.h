@@ -15,7 +15,12 @@ Changelog:
 2022-xx-xx: xxx
 ******************************************************************/
 #pragma once
+#include <ros/ros.h> 
 #include <whi_pose_registration/base_pose_registration.h>
+#include <sensor_msgs/LaserScan.h>
+#include <laser_geometry/laser_geometry.h>
+
+#include <memory>
 
 namespace pose_registration_plugins
 {
@@ -26,6 +31,19 @@ namespace pose_registration_plugins
         virtual ~PlainPoseRegistration() = default;
 
     public:
+        void initialize(const std::string& LaserTopic) override;
         bool computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+
+    private:
+        void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
+
+    private:
+        std::unique_ptr<laser_geometry::LaserProjection> cloud_projector_{ nullptr };
+#ifndef DEBUG
+        std::unique_ptr<ros::Publisher> pub_point_cloud_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_filtered_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_seg_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_inliers_{ nullptr };
+#endif
     };
 } // namespace pose_registration_plugins

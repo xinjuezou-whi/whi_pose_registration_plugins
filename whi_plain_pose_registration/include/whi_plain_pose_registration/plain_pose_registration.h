@@ -42,8 +42,8 @@ namespace pose_registration_plugins
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_point_cloud_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_filtered_{ nullptr };
-        std::unique_ptr<ros::Publisher> pub_seg_{ nullptr };
-        std::unique_ptr<ros::Publisher> pub_inliers_{ nullptr };
+        std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_seg_;
+        std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_inliers_;
 #endif
     };
 } // namespace pose_registration_plugins

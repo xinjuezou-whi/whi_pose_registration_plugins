@@ -12,36 +12,40 @@ All text above must be included in any redistribution.
 
 ******************************************************************/
 #include "whi_plain_pose_registration/plain_pose_registration.h"
+#include "whi_plain_pose_registration/pcl_utilities.h"
 
-#include <sensor_msgs/PointCloud2.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/sample_consensus/ransac.h>
-#include <pcl/sample_consensus/sac_model_circle.h>
-#include <pcl/filters/extract_indices.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/search/kdtree.h>
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/segmentation/extract_clusters.h>
-#include <pcl/filters/passthrough.h>
-#include <pcl/segmentation/min_cut_segmentation.h>
-
+#include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
 
 namespace pose_registration_plugins
 {
     PlainPoseRegistration::PlainPoseRegistration()
         : BasePoseRegistration()
-        , cloud_projector_(std::make_unique<laser_geometry::LaserProjection>())
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.2" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.3" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
     void PlainPoseRegistration::initialize(const std::string& LaserTopic)
     {
+        // params
+        node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
+        if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center_point_))
+        {
+            center_point_.resize(3);
+        }
+        node_handle_->param("pose_registration/PlainPose/radius", radius_, 0.1);
+        node_handle_->param("pose_registration/PlainPose/sigma", sigma_, 0.25);
+        node_handle_->param("pose_registration/PlainPose/weight", weight_, 0.8);
+        node_handle_->param("pose_registration/PlainPose/cut_min_neighbour", cut_min_neighbour_, 5);
+        node_handle_->param("pose_registration/PlainPose/k_neighbour", k_neighbour_, 50);
+        node_handle_->param("pose_registration/PlainPose/region_growing_neighbour", region_growing_neighbour_, 30);
+        node_handle_->param("pose_registration/PlainPose/angle", angle_, 3.0);
+        node_handle_->param("pose_registration/PlainPose/curvature", curvature_, 1.0);
+        node_handle_->param("pose_registration/PlainPose/min_cluster_size", min_cluster_size_, 50);
+        node_handle_->param("pose_registration/PlainPose/max_cluster_size", max_cluster_size_, 1000);
+
         topic_laser_scan_ = LaserTopic;
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    topic_laser_scan_, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
@@ -54,101 +58,42 @@ namespace pose_registration_plugins
 
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
     {
-        /// conversion
-        // convert sensor_msgs::LaserScan to sensor_msgs::PointCloud2
-        sensor_msgs::PointCloud2 msgCloud;
-        cloud_projector_->projectLaser(*Laser, msgCloud);
 #ifndef DEBUG
-        if (!pub_point_cloud_)
+        auto msgCloud2 = PclUtilities::msgLaserScanToMsgPointCloud2(*Laser);
+        if (!pub_projected_)
         {
-            pub_point_cloud_ = std::make_unique<ros::Publisher>(
+            pub_projected_ = std::make_unique<ros::Publisher>(
                 node_handle_->advertise<sensor_msgs::PointCloud2>("projected", 10, false));
         }
-        pub_point_cloud_->publish(msgCloud);
+        pub_projected_->publish(msgCloud2);
 #endif
-        // convert sensor_msgs::PointCloud2 to pcl::PCLPointCloud2
-        pcl::PCLPointCloud2 pclCloud2;
-        pcl_conversions::toPCL(msgCloud, pclCloud2);
-        // convert pcl::PCLPointCloud2 to pcl::PointCloud<pcl::PointXYZ>
-        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloud(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::fromPCLPointCloud2(pclCloud2, *pclCloud);
-
-        /// filtering
-        pcl::VoxelGrid<pcl::PointXYZ> vg;
-        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloudfiltered(new pcl::PointCloud<pcl::PointXYZ>);
-        vg.setInputCloud(pclCloud);
-        vg.setLeafSize(0.01f, 0.01f, 0.01f);
-        vg.filter(*pclCloudfiltered);
-#ifndef DEBUG
-        std::cout << "before filtering has: " << pclCloud->size() << " data points" << std::endl;
-        std::cout << "after filtering has: " << pclCloudfiltered->size()  << " data points" << std::endl;
-        // convert pcl::PointCloud<pcl::PointXYZ> to sensor_msgs::PointCloud2
-        sensor_msgs::PointCloud2 msgFiltered;
-        pcl::toROSMsg(*pclCloudfiltered, msgFiltered);
-        if (!pub_filtered_)
-        {
-            pub_filtered_ = std::make_unique<ros::Publisher>(
-                node_handle_->advertise<sensor_msgs::PointCloud2>("filtered", 10, false));
-        }
-        msgFiltered.header.frame_id = "laser";
-        pub_filtered_->publish(msgFiltered);
-#endif
-
+        /// convert to pcl cloud
+        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloud = PclUtilities::fromMsgLaserScan(*Laser);
+        /// downsampling
+        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloudfiltered = PclUtilities::downsampleVoxelGrid(pclCloud,
+            0.01, 0.01, 0.01);
         /// segement
-//         // Euclidean segment
-//         // Creating the KdTree object for the search method of the extraction
-//         pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
-//         tree->setInputCloud(pclCloudfiltered);
-//         std::vector<pcl::PointIndices> clusterIndices;
-//         pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-//         ec.setClusterTolerance(0.1);
-//         ec.setMinClusterSize(100);
-//         ec.setMaxClusterSize(25000);
-//         ec.setSearchMethod(tree);
-//         ec.setInputCloud(pclCloudfiltered);
-//         ec.extract(clusterIndices);
-//         for (const auto& cluster : clusterIndices)
-//         {
-//             pcl::PointCloud<pcl::PointXYZ>::Ptr cloudCluster(new pcl::PointCloud<pcl::PointXYZ>);
-//             for (const auto& idx : cluster.indices)
-//             {
-//                 cloudCluster->push_back((*pclCloudfiltered)[idx]);
-//             }
-//             cloudCluster->width = cloudCluster->size();
-//             cloudCluster->height = 1;
-//             cloudCluster->is_dense = true;
-// #ifndef DEBUG
-//             // convert pcl::PointCloud<pcl::PointXYZ> to sensor_msgs::PointCloud2
-//             sensor_msgs::PointCloud2 msgSeg;
-//             pcl::toROSMsg(*cloudCluster, msgSeg);
-//             if (!pub_seg_)
-//             {
-//                 pub_seg_ = std::make_unique<ros::Publisher>(
-//                     node_handle_->advertise<sensor_msgs::PointCloud2>("seg", 10, false));
-//             }
-//             msgSeg.header.frame_id = "laser";
-//             pub_seg_->publish(msgSeg);
-// #endif
-
-//             std::cout << "pointCloud representing the Cluster: " << cloudCluster->size() << " data points" << std::endl;
-//         }
-//         std::cout << "total clusters number: " << clusterIndices.size() << std::endl;
-        // min-cut segment
-        pcl::MinCutSegmentation<pcl::PointXYZ> seg;
-        seg.setInputCloud(pclCloudfiltered);
-        pcl::PointCloud<pcl::PointXYZ>::Ptr foregroundPoints(new pcl::PointCloud<pcl::PointXYZ>());
-        pcl::PointXYZ point;
-        point.x = 0.85;
-        point.y = 0.0;
-        point.z = 0.0;
-        foregroundPoints->points.push_back(point);
-        seg.setForegroundPoints(foregroundPoints);
-        seg.setSigma(0.25);
-        seg.setRadius(0.1);
-        seg.setNumberOfNeighbours(5);
-        seg.setSourceWeight(0.8);
         std::vector<pcl::PointIndices> clusterIndices;
-        seg.extract(clusterIndices);
+        if (segment_type_ == "cut_min")
+        {
+            pcl::PointXYZ pointCenter;
+            pointCenter.x = center_point_[0];
+            pointCenter.y = center_point_[1];
+            pointCenter.z = center_point_[2];
+            clusterIndices = PclUtilities::segmentMinCut(pclCloudfiltered, pointCenter,
+                radius_, cut_min_neighbour_, sigma_, weight_);
+        }
+        else if (segment_type_ == "region_growing")
+        {
+            clusterIndices = PclUtilities::segmentRegionGrowingKn(pclCloudfiltered,
+            k_neighbour_, region_growing_neighbour_, angles::from_degrees(angle_), curvature_,
+            min_cluster_size_, max_cluster_size_);
+        }
+        else if (segment_type_ == "region_growing_rgb")
+        {
+            clusterIndices = PclUtilities::segmentRegionGrowingRGB(pclCloudfiltered,
+                distance_, point_color_, region_color_, min_cluster_size_, max_cluster_size_);
+        }
         int index = 0;
         for (const auto& cluster : clusterIndices)
         {
@@ -162,23 +107,11 @@ namespace pose_registration_plugins
             cloudCluster->is_dense = true;
 
             /// sample consensus
-            // created RandomSampleConsensus object and compute the appropriated model
-            pcl::SampleConsensusModelCircle2D<pcl::PointXYZ>::Ptr
-                modelCircle(new pcl::SampleConsensusModelCircle2D<pcl::PointXYZ>(cloudCluster));
-            pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(modelCircle);
-            ransac.setDistanceThreshold(0.01);
-            ransac.computeModel();
-            Eigen::VectorXf coeff;
-            ransac.getModelCoefficients(coeff);
-            std::vector<int> inliers;
-            ransac.getInliers(inliers);
-            // copies all inliers of the model computed to another PointCloud
-            pcl::PointCloud<pcl::PointXYZ>::Ptr final(new pcl::PointCloud<pcl::PointXYZ>);
-            pcl::copyPointCloud(*cloudCluster, inliers, *final);
+            std::vector<double> coeffs;
+            pcl::PointCloud<pcl::PointXYZ>::Ptr inliers;
+            PclUtilities::sampleConsensusModelCircle2D(cloudCluster, coeffs, inliers);
 #ifndef DEBUG
-            // convert pcl::PointCloud<pcl::PointXYZ> to sensor_msgs::PointCloud2
-            sensor_msgs::PointCloud2 msgSeg;
-            pcl::toROSMsg(*cloudCluster, msgSeg);
+            auto msgSeg = PclUtilities::toMsgPointCloud2(cloudCluster);
             std::string topicSeg("seg" + std::to_string(index));
             if (!pubs_map_seg_[topicSeg])
             {
@@ -188,10 +121,9 @@ namespace pose_registration_plugins
             msgSeg.header.frame_id = "laser";
             pubs_map_seg_[topicSeg]->publish(msgSeg);
             std::cout << "cluser with topic " << topicSeg << " has size " << cloudCluster->size() << " data points" << std::endl;
-
-            // convert pcl::PointCloud<pcl::PointXYZ> to sensor_msgs::PointCloud2
-            sensor_msgs::PointCloud2 msgInliers;
-            pcl::toROSMsg(*final, msgInliers);
+#endif
+#ifndef DEBUG
+            auto msgInliers = PclUtilities::toMsgPointCloud2(inliers);
             std::string topicInliers("inliers" + std::to_string(index));
             if (!pubs_map_inliers_[topicInliers])
             {
@@ -200,14 +132,13 @@ namespace pose_registration_plugins
             }
             msgInliers.header.frame_id = "laser";
             pubs_map_inliers_[topicInliers]->publish(msgInliers);
-            std::cout << "coeff with topic " << topicInliers << " has size " << coeff.size() << std::endl;
-            for (int i = 0; i < coeff.size(); ++i)
+            std::cout << "coeffs with topic " << topicInliers << " has size " << coeffs.size() << std::endl;
+            for (const auto& it : coeffs)
             {
-                std::cout << coeff[i] << std::endl;
+                std::cout << it << std::endl;
             }
-
-            ++index;
 #endif
+            ++index;
         }
         std::cout << "total clusters number: " << clusterIndices.size() << std::endl;
     }

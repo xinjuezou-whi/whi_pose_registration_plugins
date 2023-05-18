@@ -18,7 +18,6 @@ Changelog:
 #include <ros/ros.h> 
 #include <whi_pose_registration/base_pose_registration.h>
 #include <sensor_msgs/LaserScan.h>
-#include <laser_geometry/laser_geometry.h>
 
 #include <memory>
 
@@ -38,9 +37,26 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
 
     private:
-        std::unique_ptr<laser_geometry::LaserProjection> cloud_projector_{ nullptr };
+        std::string segment_type_{ "region_growing" };
+        // cut-min
+        std::vector<double> center_point_;
+        double radius_{ 0.1 };
+        double sigma_{ 0.25 };
+        double weight_{ 0.8 };
+        int cut_min_neighbour_{ 5 };
+        // region growing
+        int k_neighbour_{ 50 };
+        int region_growing_neighbour_{ 30 };
+        double angle_{ 3.0 }; // degrees
+        double curvature_{ 1.0 };
+        int min_cluster_size_{ 50 };
+        int max_cluster_size_{ 1000 };
+        // region growing RGB
+        double distance_{ 0.1 };
+        double point_color_{ 6.0 };
+        double region_color_{ 5.0 };
 #ifndef DEBUG
-        std::unique_ptr<ros::Publisher> pub_point_cloud_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_filtered_{ nullptr };
         std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_seg_;
         std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_inliers_;

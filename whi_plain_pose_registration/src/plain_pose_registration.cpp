@@ -23,18 +23,28 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.3" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.4" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
     void PlainPoseRegistration::initialize(const std::string& LaserTopic)
     {
         // params
+        node_handle_->param("pose_registration/PlainPose/downsampling", downsampling_, true);
+        if (!node_handle_->getParam("pose_registration/PlainPose/downsampleing_coeffs", downsampling_coeffs_))
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                downsampling_coeffs_.push_back(0.01);
+            }
+        }
         node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
         if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center_point_))
         {
             center_point_.resize(3);
         }
+        node_handle_->param("pose_registration/PlainPose/min_cluster_size", min_cluster_size_, 50);
+        node_handle_->param("pose_registration/PlainPose/max_cluster_size", max_cluster_size_, 1000);
         node_handle_->param("pose_registration/PlainPose/radius", radius_, 0.1);
         node_handle_->param("pose_registration/PlainPose/sigma", sigma_, 0.25);
         node_handle_->param("pose_registration/PlainPose/weight", weight_, 0.8);
@@ -43,8 +53,9 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/region_growing_neighbour", region_growing_neighbour_, 30);
         node_handle_->param("pose_registration/PlainPose/angle", angle_, 3.0);
         node_handle_->param("pose_registration/PlainPose/curvature", curvature_, 1.0);
-        node_handle_->param("pose_registration/PlainPose/min_cluster_size", min_cluster_size_, 50);
-        node_handle_->param("pose_registration/PlainPose/max_cluster_size", max_cluster_size_, 1000);
+        node_handle_->param("pose_registration/PlainPose/k_radius", k_radius_, 0.2);
+        node_handle_->param("pose_registration/PlainPose/cluster_radius", cluster_radius_, 0.2);
+        node_handle_->param("pose_registration/PlainPose/intensity_tolerance", intensity_tolerance_, 5.0);
 
         topic_laser_scan_ = LaserTopic;
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
@@ -59,59 +70,84 @@ namespace pose_registration_plugins
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
     {
 #ifndef DEBUG
-        auto msgCloud2 = PclUtilities::msgLaserScanToMsgPointCloud2(*Laser);
+        // verify projected
+        auto msgCloud2 = PclUtilities<>::msgLaserScanToMsgPointCloud2(*Laser);
         if (!pub_projected_)
         {
             pub_projected_ = std::make_unique<ros::Publisher>(
                 node_handle_->advertise<sensor_msgs::PointCloud2>("projected", 10, false));
         }
         pub_projected_->publish(msgCloud2);
+        // verify converted cloud whether with RGB info
+        auto pclCloudConverted = PclUtilities<pcl::PointXYZI>::fromMsgPointCloud2(msgCloud2);
+        auto msgConverted = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(pclCloudConverted);
+        if (!pub_converted_)
+        {
+            pub_converted_ = std::make_unique<ros::Publisher>(
+                node_handle_->advertise<sensor_msgs::PointCloud2>("converted", 10, false));
+        }
+        msgConverted.header.frame_id = "laser";
+        pub_converted_->publish(msgConverted);
 #endif
         /// convert to pcl cloud
-        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloud = PclUtilities::fromMsgLaserScan(*Laser);
+        auto pclCloud = PclUtilities<pcl::PointXYZI>::fromMsgLaserScan(*Laser);
         /// downsampling
-        pcl::PointCloud<pcl::PointXYZ>::Ptr pclCloudfiltered = PclUtilities::downsampleVoxelGrid(pclCloud,
-            0.01, 0.01, 0.01);
+        auto pclOperating = pclCloud;
+        if (downsampling_)
+        {
+            pclOperating = PclUtilities<pcl::PointXYZI>::downsampleVoxelGrid(pclCloud,
+                downsampling_coeffs_[0], downsampling_coeffs_[1], downsampling_coeffs_[2]);
+#ifndef DEBUG
+            auto msgDownsampled = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(pclOperating);
+            if (!pub_downsampled_)
+            {
+                pub_downsampled_ = std::make_unique<ros::Publisher>(
+                    node_handle_->advertise<sensor_msgs::PointCloud2>("downsampled", 10, false));
+            }
+            msgDownsampled.header.frame_id = "laser";
+            pub_downsampled_->publish(msgDownsampled);
+#endif
+        }
         /// segement
         std::vector<pcl::PointIndices> clusterIndices;
         if (segment_type_ == "cut_min")
         {
-            pcl::PointXYZ pointCenter;
+            pcl::PointXYZI pointCenter;
             pointCenter.x = center_point_[0];
             pointCenter.y = center_point_[1];
             pointCenter.z = center_point_[2];
-            clusterIndices = PclUtilities::segmentMinCut(pclCloudfiltered, pointCenter,
+            clusterIndices = PclUtilities<pcl::PointXYZI>::segmentMinCut(pclOperating, pointCenter,
                 radius_, cut_min_neighbour_, sigma_, weight_);
         }
         else if (segment_type_ == "region_growing")
         {
-            clusterIndices = PclUtilities::segmentRegionGrowingKn(pclCloudfiltered,
-            k_neighbour_, region_growing_neighbour_, angles::from_degrees(angle_), curvature_,
-            min_cluster_size_, max_cluster_size_);
+            clusterIndices = PclUtilities<pcl::PointXYZI>::segmentRegionGrowingKn(pclOperating,
+                k_neighbour_, region_growing_neighbour_, angles::from_degrees(angle_), curvature_,
+                min_cluster_size_, max_cluster_size_);
         }
-        else if (segment_type_ == "region_growing_rgb")
+        else if (segment_type_ == "cond_euclidean")
         {
-            clusterIndices = PclUtilities::segmentRegionGrowingRGB(pclCloudfiltered,
-                distance_, point_color_, region_color_, min_cluster_size_, max_cluster_size_);
+            clusterIndices = PclUtilities<pcl::PointXYZI>::segmentConditionalEuclidean(pclOperating,
+                k_radius_, cluster_radius_, intensity_tolerance_, min_cluster_size_, max_cluster_size_);
         }
         int index = 0;
         for (const auto& cluster : clusterIndices)
         {
-            pcl::PointCloud<pcl::PointXYZ>::Ptr cloudCluster(new pcl::PointCloud<pcl::PointXYZ>);
+            pcl::PointCloud<pcl::PointXYZI>::Ptr cloudCluster(new pcl::PointCloud<pcl::PointXYZI>());
             for (const auto& idx : cluster.indices)
             {
-                cloudCluster->push_back((*pclCloudfiltered)[idx]);
+                cloudCluster->push_back((*pclOperating)[idx]);
             }
             cloudCluster->width = cloudCluster->size();
-            cloudCluster->height = 1;
+            cloudCluster->height = pclOperating->height;
             cloudCluster->is_dense = true;
 
             /// sample consensus
             std::vector<double> coeffs;
-            pcl::PointCloud<pcl::PointXYZ>::Ptr inliers;
-            PclUtilities::sampleConsensusModelCircle2D(cloudCluster, coeffs, inliers);
+            pcl::PointCloud<pcl::PointXYZI>::Ptr inliers;
+            PclUtilities<pcl::PointXYZI>::sampleConsensusModelCircle2D(cloudCluster, coeffs, inliers);
 #ifndef DEBUG
-            auto msgSeg = PclUtilities::toMsgPointCloud2(cloudCluster);
+            auto msgSeg = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(cloudCluster);
             std::string topicSeg("seg" + std::to_string(index));
             if (!pubs_map_seg_[topicSeg])
             {
@@ -123,7 +159,7 @@ namespace pose_registration_plugins
             std::cout << "cluser with topic " << topicSeg << " has size " << cloudCluster->size() << " data points" << std::endl;
 #endif
 #ifndef DEBUG
-            auto msgInliers = PclUtilities::toMsgPointCloud2(inliers);
+            auto msgInliers = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(inliers);
             std::string topicInliers("inliers" + std::to_string(index));
             if (!pubs_map_inliers_[topicInliers])
             {

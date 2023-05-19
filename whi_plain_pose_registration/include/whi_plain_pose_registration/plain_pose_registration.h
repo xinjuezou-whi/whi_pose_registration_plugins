@@ -37,6 +37,8 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
 
     private:
+        bool downsampling_{ true };
+        std::vector<double> downsampling_coeffs_;
         std::string segment_type_{ "region_growing" };
         // cut-min
         std::vector<double> center_point_;
@@ -51,13 +53,14 @@ namespace pose_registration_plugins
         double curvature_{ 1.0 };
         int min_cluster_size_{ 50 };
         int max_cluster_size_{ 1000 };
-        // region growing RGB
-        double distance_{ 0.1 };
-        double point_color_{ 6.0 };
-        double region_color_{ 5.0 };
+        // conditional Euclidean
+        double k_radius_{ 0.2 };
+        double cluster_radius_{ 0.2 };
+        double intensity_tolerance_{ 5.0 };
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
-        std::unique_ptr<ros::Publisher> pub_filtered_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_converted_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_downsampled_{ nullptr };
         std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_seg_;
         std::map<std::string, std::unique_ptr<ros::Publisher>> pubs_map_inliers_;
 #endif

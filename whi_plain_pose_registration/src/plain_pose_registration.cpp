@@ -81,6 +81,8 @@ namespace pose_registration_plugins
 
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
     {
+        ros::Time begin = ros::Time::now();
+
 #ifndef DEBUG
         // verify projected
         auto msgCloud2 = PclUtilities<>::msgLaserScanToMsgPointCloud2(*Laser);
@@ -224,6 +226,8 @@ namespace pose_registration_plugins
                 }
             }
         }
+
+        std::cout << "processing time: " << (ros::Time::now() - begin).toSec() << std::endl;
     }
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::PlainPoseRegistration, whi_pose_registration::BasePoseRegistration)

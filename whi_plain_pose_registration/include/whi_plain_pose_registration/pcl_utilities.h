@@ -272,7 +272,7 @@ public:
     static std::vector<pcl::PointIndices> segmentRegionGrowingRGB(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr Src,
         double Distance, double PointColor, double RegionColor, int MinClusterSize = 100, int MaxClusterSize = 25000)
     {
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud <pcl::PointXYZRGB>());
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
         pcl::copyPointCloud(*Src, *cloud);
         pcl::search::Search<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>());
         pcl::RegionGrowingRGB<pcl::PointXYZRGB> reg;
@@ -309,13 +309,13 @@ public:
         cec.setConditionFunction(
             [=](const pcl::PointXYZINormal& PointA, const pcl::PointXYZINormal& PointB, float SquaredDistance) -> bool
             {
-                if (std::abs (PointA.intensity - PointB.intensity) < IntensityTolerance)
+                if (std::abs(PointA.intensity - PointB.intensity) < IntensityTolerance)
                 {
-                    return (true);
+                    return true;
                 }
                 else
                 {
-                    return (false);
+                    return false;
                 }
             });
         cec.setClusterTolerance(ClusterRadius);

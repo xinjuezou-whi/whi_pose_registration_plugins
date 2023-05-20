@@ -28,6 +28,7 @@ Changelog:
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/features/normal_3d.h>
+#include <pcl/features/organized_edge_detection.h>
 #include <pcl/search/kdtree.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/segmentation/sac_segmentation.h>
@@ -295,6 +296,26 @@ public:
         cec.setMaxClusterSize(MaxClusterSize);
         std::vector<pcl::PointIndices> clusters;
         cec.segment(clusters);
+
+        return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentEdgeDetection(const typename pcl::PointCloud<T>::Ptr Src,
+        double KRadius, int Neighbour, double Depth)
+    {
+        auto normal = estimateNormalKr(Src, KRadius);
+
+        pcl::OrganizedEdgeFromNormals<T, pcl::Normal, pcl::Label> oed;
+        oed.setInputNormals(normal);
+        oed.setInputCloud(Src);
+        oed.setEdgeType(oed.EDGELABEL_NAN_BOUNDARY | oed.EDGELABEL_OCCLUDING | oed.EDGELABEL_OCCLUDED |
+            oed.EDGELABEL_HIGH_CURVATURE | oed.EDGELABEL_RGB_CANNY);
+        oed.setDepthDisconThreshold(Depth);
+        oed.setMaxSearchNeighbors(Neighbour);
+
+        pcl::PointCloud<pcl::Label> labels;
+        std::vector<pcl::PointIndices> clusters;
+        oed.compute(labels, clusters);
 
         return clusters;
     }

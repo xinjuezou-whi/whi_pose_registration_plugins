@@ -40,6 +40,8 @@ namespace pose_registration_plugins
         bool downsampling_{ true };
         std::vector<double> downsampling_coeffs_;
         std::string segment_type_{ "region_growing" };
+        int k_neighbour_{ 50 };
+        double k_radius_{ 0.2 };
         // cut-min
         std::vector<double> center_point_;
         double radius_{ 0.1 };
@@ -47,16 +49,16 @@ namespace pose_registration_plugins
         double weight_{ 0.8 };
         int cut_min_neighbour_{ 5 };
         // region growing
-        int k_neighbour_{ 50 };
         int region_growing_neighbour_{ 30 };
         double angle_{ 3.0 }; // degrees
         double curvature_{ 1.0 };
         int min_cluster_size_{ 50 };
         int max_cluster_size_{ 1000 };
         // conditional Euclidean
-        double k_radius_{ 0.2 };
         double cluster_radius_{ 0.2 };
         double intensity_tolerance_{ 5.0 };
+        // edge
+        int edge_neighbour_{ 20 };
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_converted_{ nullptr };

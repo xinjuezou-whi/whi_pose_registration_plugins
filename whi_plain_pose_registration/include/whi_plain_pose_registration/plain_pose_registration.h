@@ -37,8 +37,16 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
 
     private:
+        double feature_arch_radius_{ 0.06 };
+        double feature_arch_radius_tolerance_{ 0.01 };
         bool downsampling_{ true };
         std::vector<double> downsampling_coeffs_;
+        double line_distance_thresh_{ 0.001 };
+        double circle_distance_thresh_{ 0.001 };
+        double feature_segment_distance_thresh_{ 0.04 };
+        int feature_min_size_{ 10 };
+        int feature_max_size_{ 200 };
+        /// segment related
         std::string segment_type_{ "region_growing" };
         int k_neighbour_{ 50 };
         double k_radius_{ 0.2 };
@@ -57,8 +65,6 @@ namespace pose_registration_plugins
         // conditional Euclidean
         double cluster_radius_{ 0.2 };
         double intensity_tolerance_{ 5.0 };
-        // edge
-        int edge_neighbour_{ 20 };
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_converted_{ nullptr };

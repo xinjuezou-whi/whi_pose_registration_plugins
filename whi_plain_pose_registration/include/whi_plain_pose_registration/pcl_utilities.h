@@ -25,6 +25,7 @@ Changelog:
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_circle.h>
+#include <pcl/sample_consensus/sac_model_line.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/features/normal_3d.h>
@@ -88,6 +89,32 @@ public:
         pcl::toROSMsg(*Src, msgPointCloud2);
 
         return msgPointCloud2;
+    }
+
+    static void extractTo(const typename pcl::PointCloud<T>::Ptr Src, const pcl::PointIndices::Ptr Indices,
+        typename pcl::PointCloud<T>::Ptr Dst, bool Negative = false)
+    {
+        // create the filtering object
+        pcl::ExtractIndices<T> extract;
+        extract.setInputCloud(Src);
+        extract.setIndices(Indices);
+        extract.setNegative(Negative);
+        extract.filter(*Dst);
+    }
+
+    static void extractTo(const typename pcl::PointCloud<T>::Ptr Src, const pcl::PointIndices& Indices,
+        typename pcl::PointCloud<T>::Ptr Dst, bool Negative = false)
+    {
+        pcl::PointIndices::Ptr indices(new pcl::PointIndices(Indices));
+        extractTo(Src, indices, Dst, Negative);
+    }
+
+    static void extractTo(const typename pcl::PointCloud<T>::Ptr Src, std::vector<int>& Indices,
+        typename pcl::PointCloud<T>::Ptr Dst, bool Negative = false)
+    {
+        pcl::PointIndices::Ptr indices(new pcl::PointIndices());
+        indices->indices = Indices;
+        extractTo(Src, indices, Dst, Negative);
     }
 
     static typename pcl::PointCloud<T>::Ptr downsampleVoxelGrid(const typename pcl::PointCloud<T>::Ptr Src,
@@ -245,7 +272,7 @@ public:
     static std::vector<pcl::PointIndices> segmentRegionGrowingRGB(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr Src,
         double Distance, double PointColor, double RegionColor, int MinClusterSize = 100, int MaxClusterSize = 25000)
     {
-        pcl::PointCloud <pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud <pcl::PointXYZRGB>());
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud <pcl::PointXYZRGB>());
         pcl::copyPointCloud(*Src, *cloud);
         pcl::search::Search<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>());
         pcl::RegionGrowingRGB<pcl::PointXYZRGB> reg;
@@ -321,22 +348,48 @@ public:
     }
 
     static bool sampleConsensusModelCircle2D(const typename pcl::PointCloud<T>::Ptr Src,
-        std::vector<double>& Coeffs, typename pcl::PointCloud<T>::Ptr& Inliers)
+        double DistanceThresh, std::vector<int>& Inliers, std::vector<double>& Coeffs)
     {
         // created RandomSampleConsensus object and compute the appropriated model
         typename pcl::SampleConsensusModelCircle2D<T>::Ptr
             modelCircle(new pcl::SampleConsensusModelCircle2D<T>(Src));
-        pcl::RandomSampleConsensus<T> ransac(modelCircle);
-        ransac.setDistanceThreshold(0.01);
-        ransac.computeModel();
-        std::vector<int> inliers;
-        ransac.getInliers(inliers);
-
-        if (!inliers.empty())
+        pcl::RandomSampleConsensus<T> ransac(modelCircle, DistanceThresh);
+        if (ransac.computeModel())
         {
+            ransac.getInliers(Inliers);
+#ifdef DEBUG
             // copies all inliers of the model computed to another PointCloud
+            pcl::PointCloud<T>::Ptr inliers(new pcl::PointCloud<T>());
             Inliers.reset(new pcl::PointCloud<T>());
-            pcl::copyPointCloud(*Src, inliers, *Inliers);
+            pcl::copyPointCloud(*Src, Inliers, *inliers);
+#endif
+
+            Eigen::VectorXf coeffs;
+            ransac.getModelCoefficients(coeffs);
+            for (int i = 0; i < coeffs.size(); ++i)
+            {
+                Coeffs.push_back(coeffs[i]);
+            }
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    static bool sampleConsensusModelLine(const typename pcl::PointCloud<T>::Ptr Src,
+        double DistanceThresh, std::vector<int>& Inliers, std::vector<double>& Coeffs)
+    {
+        // created RandomSampleConsensus object and compute the appropriated model
+        typename pcl::SampleConsensusModelLine<T>::Ptr
+            modelLine(new pcl::SampleConsensusModelLine<T>(Src));
+        pcl::RandomSampleConsensus<T> ransac(modelLine, DistanceThresh);
+        if (ransac.computeModel())
+        {
+            ransac.getInliers(Inliers);
+
             Eigen::VectorXf coeffs;
             ransac.getModelCoefficients(coeffs);
             for (int i = 0; i < coeffs.size(); ++i)

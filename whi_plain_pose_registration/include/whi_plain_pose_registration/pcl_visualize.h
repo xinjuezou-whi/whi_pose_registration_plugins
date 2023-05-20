@@ -7,6 +7,11 @@ Features:
 - one visualizer per thread
 - xxx
 
+Limits:
+- Only one instance should be initiated otherwise the OpenGL would crash,
+  it is a PCL issue
+- xxx
+
 Written by Xinjue Zou, xinjue.zou@outlook.com
 
 GNU General Public License, check LICENSE for more information.
@@ -51,6 +56,8 @@ public:
 
 
 private:
+    // NOTE: ONLY ONE INSTANCE SHOULD BE INITIATED
+    // otherwise the OpenGL would complain and crash, it is a PCL issue
     void view(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         int PointSize, std::array<double, 3> PointColor)
     {

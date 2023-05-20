@@ -24,7 +24,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.5" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.6" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -32,6 +32,9 @@ namespace pose_registration_plugins
     {
         /// params
         // common
+        node_handle_->param("pose_registration/PlainPose/feature_arch_radius", feature_arch_radius_, 0.06);
+        node_handle_->param("pose_registration/PlainPose/feature_arch_radius_tolerance",
+            feature_arch_radius_tolerance_, 0.015);
         node_handle_->param("pose_registration/PlainPose/downsampling", downsampling_, true);
         if (!node_handle_->getParam("pose_registration/PlainPose/downsampleing_coeffs", downsampling_coeffs_))
         {
@@ -40,6 +43,12 @@ namespace pose_registration_plugins
                 downsampling_coeffs_.push_back(0.01);
             }
         }
+        node_handle_->param("pose_registration/PlainPose/line_distance_thresh", line_distance_thresh_, 0.001);
+        node_handle_->param("pose_registration/PlainPose/circle_distance_thresh", circle_distance_thresh_, 0.001);
+        node_handle_->param("pose_registration/PlainPose/feature_segment_distance_thresh",
+            feature_segment_distance_thresh_, 0.04);
+        node_handle_->param("pose_registration/PlainPose/feature_min_size", feature_min_size_, 10);
+        node_handle_->param("pose_registration/PlainPose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
         if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center_point_))
         {
@@ -59,7 +68,6 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/curvature", curvature_, 1.0);
         node_handle_->param("pose_registration/PlainPose/cluster_radius", cluster_radius_, 0.2);
         node_handle_->param("pose_registration/PlainPose/intensity_tolerance", intensity_tolerance_, 5.0);
-        node_handle_->param("pose_registration/PlainPose/edge_neighbour", edge_neighbour_, 20);
 
         topic_laser_scan_ = LaserTopic;
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
@@ -112,7 +120,7 @@ namespace pose_registration_plugins
             pub_downsampled_->publish(msgDownsampled);
 #endif
         }
-        /// segement
+        /// segement features from epic
         std::vector<pcl::PointIndices> clusterIndices;
         if (segment_type_ == "cut_min")
         {
@@ -134,72 +142,87 @@ namespace pose_registration_plugins
             clusterIndices = PclUtilities<pcl::PointXYZI>::segmentConditionalEuclidean(pclOperating,
                 k_radius_, cluster_radius_, intensity_tolerance_, min_cluster_size_, max_cluster_size_);
         }
-        else if (segment_type_ == "edge")
-        {
-            clusterIndices = PclUtilities<pcl::PointXYZI>::segmentEdgeDetection(pclOperating,
-                k_radius_, edge_neighbour_, 1.0);
-            
-            static PclVisualize<pcl::PointXYZI> viewer;
-            viewer.viewCloud(pclOperating, "debug");
-        }
 #ifndef DEBUG
-        std::cout << "total clusters number: " << clusterIndices.size() << std::endl;
+        std::cout << "total clusters number from epic: " << clusterIndices.size() << std::endl;
         for (int i = 0; i < clusterIndices.size(); ++i)
         {
             std::cout << "cluster " << i << " has points " << clusterIndices[i].indices.size() << std::endl;
         }
 #endif
 
-        int index = 0;
         for (const auto& cluster : clusterIndices)
         {
-            pcl::PointCloud<pcl::PointXYZI>::Ptr cloudCluster(new pcl::PointCloud<pcl::PointXYZI>());
-            for (const auto& idx : cluster.indices)
-            {
-                // process each point
-                cloudCluster->push_back((*pclOperating)[idx]);
-            }
-            cloudCluster->width = cloudCluster->size();
-            cloudCluster->height = pclOperating->height;
-            cloudCluster->is_dense = true;
+            pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFeatures(new pcl::PointCloud<pcl::PointXYZI>());
+            PclUtilities<pcl::PointXYZI>::extractTo(pclOperating, cluster, cloudFeatures);
 
-            /// sample consensus
-            if (!cloudCluster->empty())
+            if (!cloudFeatures->empty() && cloudFeatures->size() < 500)
             {
-                std::vector<double> coeffs;
-                pcl::PointCloud<pcl::PointXYZI>::Ptr inliers;
-                PclUtilities<pcl::PointXYZI>::sampleConsensusModelCircle2D(cloudCluster, coeffs, inliers);
+                /// segment single feature from epic
+                std::vector<pcl::PointIndices> featureIndices;
+                featureIndices = PclUtilities<pcl::PointXYZI>::segmentEuclidean(cloudFeatures,
+                    feature_segment_distance_thresh_, feature_min_size_, feature_max_size_);
 #ifndef DEBUG
-                auto msgSeg = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(cloudCluster);
-                std::string topicSeg("seg" + std::to_string(index));
-                if (!pubs_map_seg_[topicSeg])
+                std::cout << "total feature number from features: " << featureIndices.size() << std::endl;
+                for (int i = 0; i < featureIndices.size(); ++i)
                 {
-                    pubs_map_seg_[topicSeg] = std::make_unique<ros::Publisher>(
-                        node_handle_->advertise<sensor_msgs::PointCloud2>(topicSeg, 10, false));
+                    std::cout << "feature " << i << " has points " << featureIndices[i].indices.size() << std::endl;
                 }
-                msgSeg.header.frame_id = "laser";
-                pubs_map_seg_[topicSeg]->publish(msgSeg);
-                std::cout << "cluser with topic " << topicSeg << " has size " << cloudCluster->size() << " data points" << std::endl;
+                int i = 0;
 #endif
-#ifndef DEBUG
-                auto msgInliers = PclUtilities<pcl::PointXYZI>::toMsgPointCloud2(inliers);
-                std::string topicInliers("inliers" + std::to_string(index));
-                if (!pubs_map_inliers_[topicInliers])
+                for (const auto& feature : featureIndices)
                 {
-                    pubs_map_inliers_[topicInliers] = std::make_unique<ros::Publisher>(
-                        node_handle_->advertise<sensor_msgs::PointCloud2>(topicInliers, 10, false));
-                }
-                msgInliers.header.frame_id = "laser";
-                pubs_map_inliers_[topicInliers]->publish(msgInliers);
-                std::cout << "coeffs with topic " << topicInliers << " has size " << coeffs.size() << std::endl;
-                for (const auto& it : coeffs)
-                {
-                    std::cout << it << std::endl;
-                }
-#endif
-            }
+                    pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFeature(new pcl::PointCloud<pcl::PointXYZI>());
+                    PclUtilities<pcl::PointXYZI>::extractTo(cloudFeatures, feature, cloudFeature);
 
-            ++index;
+#ifdef DEBUG
+                    static PclVisualize<pcl::PointXYZI> viewer;
+                    viewer.viewCloud(cloudFeature, "debug_features" + std::to_string(i), 1 + i * 3);
+                    ++i;
+#endif
+                    /// sample consensus
+                    std::vector<int> inliersIndicesLine;
+                    std::vector<double> coeffsLine;
+                    std::vector<int> inliersIndicesCircle;
+                    std::vector<double> coeffsCircle;
+                    // give circle a higher priority since line tends to be less acurate
+                    if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelCircle2D(cloudFeature,
+                        circle_distance_thresh_, inliersIndicesCircle, coeffsCircle))
+                    {
+                        std::cout << "circle coeffs count: " << coeffsCircle.size() << std::endl;
+                        for (const auto& it : coeffsCircle)
+                        {
+                            std::cout << it << std::endl;
+                        }
+
+                        if (fabs(coeffsCircle[2] - feature_arch_radius_) > feature_arch_radius_tolerance_)
+                        {
+                            if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelLine(cloudFeature,
+                                line_distance_thresh_, inliersIndicesLine, coeffsLine))
+                            {
+                                std::cout << "line coeffs count: " << coeffsLine.size() << std::endl;
+                                for (const auto& it : coeffsLine)
+                                {
+                                    std::cout << it << std::endl;
+                                }
+                            }
+                        }
+                    }
+                    else if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelLine(cloudFeature,
+                        line_distance_thresh_, inliersIndicesLine, coeffsLine))
+                    {
+#ifndef DEBUG
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr inliers(new pcl::PointCloud<pcl::PointXYZI>());
+                        PclUtilities<pcl::PointXYZI>::extractTo(cloudFeature, inliersIndicesLine, inliers);
+                        pcl::PointCloud<pcl::PointXYZI>::Ptr outliers(new pcl::PointCloud<pcl::PointXYZI>());
+                        PclUtilities<pcl::PointXYZI>::extractTo(cloudFeature, inliersIndicesLine, outliers, true);
+                        static PclVisualize<pcl::PointXYZI> viewer;
+                        viewer.viewCloud(inliers, "debug_inliers", 3);
+                        viewer.viewCloud(outliers, "debug_outliers", 1, std::array<double, 3>({ 1.0, 0.0, 0.0}));
+#endif
+
+                    }
+                }
+            }
         }
     }
 

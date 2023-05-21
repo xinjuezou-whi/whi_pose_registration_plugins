@@ -92,18 +92,17 @@ public:
         return msgPointCloud2;
     }
 
-    static bool loadTo(const std::string& File, typename pcl::PointCloud<T>::Ptr Dst)
+    static typename pcl::PointCloud<T>::Ptr loadFrom(const std::string& File)
     {
         typename pcl::PointCloud<T>::Ptr cloud(new pcl::PointCloud<T>);
         if (pcl::io::loadPCDFile<T>(File, *cloud) == -1)
         {
             std::cout << "failed to load pcd file " << File << std::endl;
-            return false;
+            return nullptr;
         }
         else
         {
-            Dst = cloud;
-            return true;
+            return cloud;
         }
     }
 

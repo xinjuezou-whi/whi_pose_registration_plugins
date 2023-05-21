@@ -24,14 +24,18 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.7" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.8" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
-    void PlainPoseRegistration::initialize(const std::string& LaserTopic)
+    void PlainPoseRegistration::initialize()
     {
         /// params
         // common
+        std::string laserScanTopic;
+        std::string amclTopic;
+        node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
+        node_handle_->param("pose_registration/PlainPose/odom_topic", amclTopic, std::string("amcl_pose"));
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius", feature_arch_radius_, 0.06);
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius_tolerance",
             feature_arch_radius_tolerance_, 0.015);
@@ -69,9 +73,10 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/cluster_radius", cluster_radius_, 0.2);
         node_handle_->param("pose_registration/PlainPose/intensity_tolerance", intensity_tolerance_, 5.0);
 
-        topic_laser_scan_ = LaserTopic;
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
-		    topic_laser_scan_, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
+		    laserScanTopic, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
+        sub_amcl_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<geometry_msgs::PoseWithCovarianceStamped>(
+			amclTopic, 10, std::bind(&PlainPoseRegistration::subCallbackEstimated, this, std::placeholders::_1)));
     }
 
     bool PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
@@ -228,6 +233,11 @@ namespace pose_registration_plugins
         }
 
         std::cout << "processing time: " << (ros::Time::now() - begin).toSec() << std::endl;
+    }
+
+    void PlainPoseRegistration::subCallbackEstimated(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& Estimated)
+    {
+
     }
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::PlainPoseRegistration, whi_pose_registration::BasePoseRegistration)

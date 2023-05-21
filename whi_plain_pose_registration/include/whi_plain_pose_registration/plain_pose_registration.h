@@ -18,6 +18,7 @@ Changelog:
 #include <ros/ros.h> 
 #include <whi_pose_registration/base_pose_registration.h>
 #include <sensor_msgs/LaserScan.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <memory>
 
@@ -30,11 +31,12 @@ namespace pose_registration_plugins
         virtual ~PlainPoseRegistration() = default;
 
     public:
-        void initialize(const std::string& LaserTopic) override;
+        void initialize() override;
         bool computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
 
     private:
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
+        void subCallbackEstimated(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& Estimated);
 
     private:
         double feature_arch_radius_{ 0.06 };

@@ -38,6 +38,7 @@ Changelog:
 #include <pcl/segmentation/region_growing.h>
 #include <pcl/segmentation/region_growing_rgb.h>
 #include <pcl/segmentation/conditional_euclidean_clustering.h>
+#include <pcl/io/pcd_io.h>
 
 template<typename T = pcl::PointXYZ,
     template<typename...> class P = pcl::PointCloud, template<typename...> class S = pcl::search::Search>
@@ -89,6 +90,21 @@ public:
         pcl::toROSMsg(*Src, msgPointCloud2);
 
         return msgPointCloud2;
+    }
+
+    static bool loadTo(const std::string& File, typename pcl::PointCloud<T>::Ptr Dst)
+    {
+        typename pcl::PointCloud<T>::Ptr cloud(new pcl::PointCloud<T>);
+        if (pcl::io::loadPCDFile<T>(File, *cloud) == -1)
+        {
+            std::cout << "failed to load pcd file " << File << std::endl;
+            return false;
+        }
+        else
+        {
+            Dst = cloud;
+            return true;
+        }
     }
 
     static void extractTo(const typename pcl::PointCloud<T>::Ptr Src, const pcl::PointIndices::Ptr Indices,
@@ -345,6 +361,27 @@ public:
         oed.compute(labels, clusters);
 
         return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentSAC(const typename pcl::PointCloud<T>::Ptr Src, int Model,
+        double DistanceThresh)
+    {
+        // create the segmentation object
+        pcl::SACSegmentation<T> seg;
+        // optional
+        seg.setOptimizeCoefficients(true);
+        // mandatory
+        // for model enum definition(like pcl::SACMODEL_PLANE), please refer to:
+        // https://pointclouds.org/documentation/group__sample__consensus.html
+        seg.setModelType(Model);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setDistanceThreshold(DistanceThresh);
+        seg.setInputCloud(Src);
+        pcl::ModelCoefficients::Ptr coeffs(new pcl::ModelCoefficients());
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        seg.segment(*inliers, *coeffs);
+
+        return inliers->indices;
     }
 
     static bool sampleConsensusModelCircle2D(const typename pcl::PointCloud<T>::Ptr Src,

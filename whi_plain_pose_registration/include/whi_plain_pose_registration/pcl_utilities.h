@@ -6,6 +6,10 @@ Features:
 - basic point cloud manipulations
 - xxx
 
+Reference:
+- https://github.com/PointCloudLibrary/pcl/tree/master/test for usage
+- https://github.com/PointCloudLibrary/pcl/tree/master/examples for usage
+
 Written by Xinjue Zou, xinjue.zou@outlook.com
 
 GNU General Public License, check LICENSE for more information.

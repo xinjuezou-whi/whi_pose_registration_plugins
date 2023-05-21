@@ -159,7 +159,7 @@ namespace pose_registration_plugins
 
             if (!cloudFeatures->empty() && cloudFeatures->size() < 500)
             {
-                /// segment single feature from epic
+                /// segment each single feature from features
                 std::vector<pcl::PointIndices> featureIndices;
                 featureIndices = PclUtilities<pcl::PointXYZI>::segmentEuclidean(cloudFeatures,
                     feature_segment_distance_thresh_, feature_min_size_, feature_max_size_);

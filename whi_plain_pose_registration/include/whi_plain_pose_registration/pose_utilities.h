@@ -29,7 +29,7 @@ public:
     ~PoseUtilities() = delete;
 
 public:
-    static geometry_msgs::Quaternion fromEular(double Roll, double Pitch, double Yaw)
+    static geometry_msgs::Quaternion fromEuler(double Roll, double Pitch, double Yaw)
     {
         tf2::Quaternion orientation;
 		orientation.setRPY(Roll, Pitch, Yaw);
@@ -37,7 +37,7 @@ public:
 		return tf2::toMsg(orientation);
     }
 
-    static std::array<double, 3> toEular(const geometry_msgs::Quaternion& Orientation)
+    static std::array<double, 3> toEuler(const geometry_msgs::Quaternion& Orientation)
     {
         tf::Quaternion quat(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;

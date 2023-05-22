@@ -33,6 +33,12 @@ template<typename T = pcl::PointXYZ, template<typename...> class P = pcl::PointC
 class PclVisualize
 {
 public:
+    static const std::string& VERSION()
+    {
+        return "00.02";
+    }
+
+public:
     PclVisualize()
         : queue_(std::make_unique<EventQueue>(false))
     {

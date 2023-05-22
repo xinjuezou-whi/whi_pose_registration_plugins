@@ -49,6 +49,12 @@ template<typename T = pcl::PointXYZ,
 class PclUtilities
 {
 public:
+    static const std::string& VERSION()
+    {
+        return "00.08";
+    }
+
+public:
     PclUtilities() = delete;
     ~PclUtilities() = delete;
 

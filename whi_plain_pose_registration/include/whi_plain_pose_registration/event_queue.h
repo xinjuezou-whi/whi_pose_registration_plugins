@@ -31,7 +31,12 @@ Changelog:
 class EventQueue
 {
 public:
-    const std::string VERSION{"00.07"};
+    static const std::string& VERSION()
+    {
+        return "00.07";
+    }
+
+public:
     using SharedPtr = std::shared_ptr<EventQueue>;
     using UniquePtr = std::unique_ptr<EventQueue>;
     using EventFunc = std::function<void()>; // nullary functor

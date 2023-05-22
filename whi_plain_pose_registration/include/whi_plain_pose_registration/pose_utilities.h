@@ -2,7 +2,7 @@
 utilities of poses operation
 
 Features:
-- converstion between Eular and Quaternion
+- convertion between Euler and quaternion
 - transform
 - xxx
 
@@ -20,10 +20,17 @@ Changelog:
 #include <tf2/LinearMath/Transform.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2/LinearMath/Quaternion.h>
-#include <tf/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <angles/angles.h>
 
 class PoseUtilities
 {
+public:
+    static const std::string& VERSION()
+    {
+        return "00.03";
+    }
+
 public:
     PoseUtilities() = delete;
     ~PoseUtilities() = delete;
@@ -39,28 +46,37 @@ public:
 
     static std::array<double, 3> toEuler(const geometry_msgs::Quaternion& Orientation)
     {
-        tf::Quaternion quat(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
+        tf2::Quaternion quat(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
-  		tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  		tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
 
         return { roll, pitch, yaw };
     }
 
-    static geometry_msgs::TransformStamped getTransform(const geometry_msgs::Pose& Parent,
-        const geometry_msgs::Pose& Child, const std::string FrameParent = "", const std::string FrameChild = "")
+    static geometry_msgs::Quaternion getRelativeRotation(const geometry_msgs::Quaternion& From,
+        const geometry_msgs::Quaternion& To)
+    {
+        tf2::Quaternion quatFrom(From.x, From.y, From.z, From.w);
+        tf2::Quaternion quatTo(To.x, To.y, To.z, To.w);
+
+        return tf2::toMsg(quatTo * quatFrom.inverse());
+    }
+
+    static geometry_msgs::TransformStamped getTransform(const geometry_msgs::Pose& From,
+        const geometry_msgs::Pose& To, const std::string FrameFrom = "", const std::string FrameTo = "")
     {
         // convert the poses to tf2::Transform objects
-        tf2::Transform transformParent;
-        tf2::Transform transformChild;
-        tf2::fromMsg(Parent, transformParent);
-        tf2::fromMsg(Child, transformChild);
+        tf2::Transform transformFrom;
+        tf2::Transform transformTo;
+        tf2::fromMsg(From, transformFrom);
+        tf2::fromMsg(To, transformTo);
         // calculate the transform between the two poses
-        tf2::Transform transform = transformParent.inverse() * transformChild;
+        tf2::Transform transform = transformTo * transformFrom.inverse();
         // convert the transform back to geometry_msgs::TransformStamped
         geometry_msgs::TransformStamped transformStamped;
         transformStamped.header.stamp = ros::Time::now();
-        transformStamped.header.frame_id = FrameParent;
-        transformStamped.child_frame_id = FrameChild;
+        transformStamped.header.frame_id = FrameFrom;
+        transformStamped.child_frame_id = FrameTo;
         transformStamped.transform = tf2::toMsg(transform);
 
         return transformStamped;
@@ -74,4 +90,32 @@ public:
 
         return transformedPose;
     }
+
+#ifdef DEBUG
+    static void UT()
+    {
+        geometry_msgs::Pose poseRef;
+        poseRef.orientation = PoseUtilities::fromEuler(0, 0, angles::from_degrees(90));
+        geometry_msgs::Pose poseTo;
+        poseTo.position.x = -1;
+        poseTo.position.y = 2;
+        poseTo.position.z = -3;
+        poseTo.orientation = PoseUtilities::fromEuler(0, 0, angles::from_degrees(45));
+        auto euler = PoseUtilities::toEuler(PoseUtilities::getRelativeRotation(poseTo.orientation, poseRef.orientation));
+        std::cout << "relative rotation: " << angles::to_degrees(euler[0]) << ","
+            << angles::to_degrees(euler[1]) << "," << angles::to_degrees(euler[2]) << std::endl;
+        auto trans = PoseUtilities::getTransform(poseTo, poseRef);
+        std::cout << "translation x:" << trans.transform.translation.x << ", y:" << trans.transform.translation.y <<
+            ", z:" << trans.transform.translation.z << std::endl;
+        auto rotation = PoseUtilities::toEuler(trans.transform.rotation);
+        std::cout << "rotation r:" << angles::to_degrees(rotation[0]) << ", p:" << angles::to_degrees(rotation[1]) <<
+            ", y:" << angles::to_degrees(rotation[2]) << std::endl;
+        auto transback = PoseUtilities::applyTransform(poseTo, trans);
+        std::cout << "transform back x:" << transback.position.x << ", y:" << transback.position.y <<
+            ", z:" << transback.position.z << std::endl;
+        auto oriback = PoseUtilities::toEuler(transback.orientation);
+        std::cout << "transform back roll:" << angles::to_degrees(oriback[0]) << ", pitch:" <<
+            angles::to_degrees(oriback[1]) << ", yaw: " << angles::to_degrees(oriback[2]) << std::endl;
+    }
+#endif
 };

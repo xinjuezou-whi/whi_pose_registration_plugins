@@ -53,7 +53,7 @@ namespace pose_registration_plugins
         int k_neighbour_{ 50 };
         double k_radius_{ 0.2 };
         // cut-min
-        std::vector<double> center_point_;
+        geometry_msgs::Pose center_;
         double radius_{ 0.1 };
         double sigma_{ 0.25 };
         double weight_{ 0.8 };

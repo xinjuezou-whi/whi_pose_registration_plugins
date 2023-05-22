@@ -14,6 +14,7 @@ All text above must be included in any redistribution.
 #include "whi_plain_pose_registration/plain_pose_registration.h"
 #include "whi_plain_pose_registration/pcl_utilities.h"
 #include "whi_plain_pose_registration/pcl_visualize.h"
+#include "whi_plain_pose_registration/pose_utilities.h"
 
 #include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
@@ -24,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.8" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.9" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -34,6 +35,7 @@ namespace pose_registration_plugins
         // common
         std::string laserScanTopic;
         std::string amclTopic;
+        std::vector<double> center;
         node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
         node_handle_->param("pose_registration/PlainPose/odom_topic", amclTopic, std::string("amcl_pose"));
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius", feature_arch_radius_, 0.06);
@@ -54,10 +56,13 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/feature_min_size", feature_min_size_, 10);
         node_handle_->param("pose_registration/PlainPose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
-        if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center_point_))
+        if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center))
         {
-            center_point_.resize(3);
+            center.resize(3);
         }
+        center_.position.x = center[0];
+        center_.position.y = center[1];
+        center_.position.z = center[2];
         node_handle_->param("pose_registration/PlainPose/k_neighbour", k_neighbour_, 50);
         node_handle_->param("pose_registration/PlainPose/k_radius", k_radius_, 0.2);
         // specific
@@ -132,9 +137,9 @@ namespace pose_registration_plugins
         if (segment_type_ == "cut_min")
         {
             pcl::PointXYZI pointCenter;
-            pointCenter.x = center_point_[0];
-            pointCenter.y = center_point_[1];
-            pointCenter.z = center_point_[2];
+            pointCenter.x = center_.position.x;
+            pointCenter.y = center_.position.y;
+            pointCenter.z = center_.position.z;
             clusterIndices = PclUtilities<pcl::PointXYZI>::segmentMinCut(pclOperating, pointCenter,
                 radius_, cut_min_neighbour_, sigma_, weight_);
         }

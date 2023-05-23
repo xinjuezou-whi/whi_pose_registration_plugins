@@ -82,7 +82,8 @@ public:
         return transformStamped;
     }
 
-    static geometry_msgs::Pose applyTransform(const geometry_msgs::Pose& Src, geometry_msgs::TransformStamped& Transform)
+    static geometry_msgs::Pose applyTransform(const geometry_msgs::Pose& Src,
+		const geometry_msgs::TransformStamped& Transform)
     {
         // apply the transform to the pose
         geometry_msgs::Pose transformedPose;

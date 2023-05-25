@@ -28,7 +28,7 @@ class PoseUtilities
 public:
     static const std::string& VERSION()
     {
-        return "00.03";
+        return "00.04";
     }
 
 public:
@@ -57,6 +57,28 @@ public:
         tf2::Quaternion quaternion(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
 
         return toEuler(quaternion);
+    }
+
+    static geometry_msgs::TransformStamped convert(const geometry_msgs::Pose& Src)
+    {
+        geometry_msgs::TransformStamped transform;
+        transform.transform.translation.x = Src.position.x;
+        transform.transform.translation.y = Src.position.y;
+        transform.transform.translation.z = Src.position.z;
+        transform.transform.rotation = Src.orientation;
+
+        return transform;
+    }
+
+    static geometry_msgs::Pose convert(const geometry_msgs::TransformStamped& Src)
+    {
+        geometry_msgs::Pose pose;
+        pose.position.x = Src.transform.translation.x;
+        pose.position.y = Src.transform.translation.y;
+        pose.position.z = Src.transform.translation.z;
+        pose.orientation = Src.transform.rotation;
+
+        return pose;
     }
 
     static geometry_msgs::Quaternion getRelativeRotation(const geometry_msgs::Quaternion& From,
@@ -97,6 +119,41 @@ public:
 
         return transformedPose;
     }
+
+    static double distance(const geometry_msgs::Pose& PoseA, const geometry_msgs::Pose& PoseB)
+    {
+        return sqrt(pow(PoseA.position.x - PoseB.position.x, 2) + 
+            pow(PoseA.position.y - PoseB.position.y, 2) + pow(PoseA.position.z - PoseB.position.z, 2));
+    }
+
+    static geometry_msgs::Point createVector2D(const geometry_msgs::Point& Start, const geometry_msgs::Point& End)
+	{
+        geometry_msgs::Point point;
+        point.x = End.x - Start.x;
+        point.y = End.y - Start.y;
+		return point;
+	}
+
+    static geometry_msgs::Point createVector2D(const geometry_msgs::Point& Start, double Length, double Theta)
+	{
+        geometry_msgs::Point point;
+        point.x = Length * sin(Theta) + Start.x;
+        point.y = Length * cos(Theta) + Start.y;
+		return point;
+	}
+
+    static double angleBetweenVectors2D(const geometry_msgs::Point& From, const geometry_msgs::Point& To)
+	{
+		double dot = From.x * To.x + From.y * To.y;
+		double magFrom = sqrt(From.x * From.x + From.y * From.y);
+		double magTo = sqrt(To.x * To.x + To.y * To.y);
+
+		// // axis of cross product
+		// double z = From.x * To.y - From.y * To.x;
+
+		// return signOf(z) * acos(dot / (magFrom * magTo));
+        return acos(dot / (magFrom * magTo));
+	}
 
 #ifdef DEBUG
     static void UT()

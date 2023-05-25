@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.12" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.13" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -95,13 +95,14 @@ namespace pose_registration_plugins
     {
         auto tfLaser2Map = listenTf("map", laser_frame_, ros::Time(0));
         auto tfLaser2Baselink = listenTf(base_link_frame_, laser_frame_, ros::Time(0));
+        double angleLaser2Map = PoseUtilities::toEuler(tfLaser2Map.transform.rotation)[2];
+        double angleLaser2Baselink = PoseUtilities::toEuler(tfLaser2Baselink.transform.rotation)[2];
 #ifndef DEBUG
         std::cout << "laser in map x:" << tfLaser2Map.transform.translation.x <<
-            ", y:" << tfLaser2Map.transform.translation.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(tfLaser2Map.transform.rotation)[2]) << std::endl;
+            ", y:" << tfLaser2Map.transform.translation.y << ", yaw:" << angles::to_degrees(angleLaser2Map) << std::endl;
         std::cout << "laser in baselink x:" << tfLaser2Baselink.transform.translation.x <<
-            ", y:" << tfLaser2Baselink.transform.translation.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(tfLaser2Baselink.transform.rotation)[2]) << std::endl;
+            ", y:" << tfLaser2Baselink.transform.translation.y << ", yaw:" << angles::to_degrees(angleLaser2Baselink) <<
+            " and rad is " << angleLaser2Baselink << std::endl;
 #endif
 
         geometry_msgs::Pose feature;
@@ -116,18 +117,22 @@ namespace pose_registration_plugins
         pntFeature.x = feature.position.x;
         pntFeature.y = feature.position.y;
         auto vecLaser2Feature = PoseUtilities::createVector2D(pntLaser, pntFeature);
-        auto vecLaserXAxis = PoseUtilities::createVector2D(pntLaser, 0.5,
-            PoseUtilities::toEuler(tfLaser2Map.transform.rotation)[2]);
-        double angle = PoseUtilities::angleBetweenVectors2D(vecLaser2Feature, vecLaserXAxis);
-        std::cout << "angle " << angle << std::endl;
-
-        // double angle = PoseUtilities::toEuler(tfLaser2Map.transform.rotation)[2] - 
-        //     PoseUtilities::toEuler(feature.orientation)[2];
-        // double dist = PoseUtilities::distance(PoseUtilities::convert(tfLaser2Map), feature);
-        // std::cout << "distance:" << dist << std::endl;
-        // center_.position.x = dist * cos(angle);
-        // center_.position.y = dist * -sin(angle);
-        // std::cout << "pose for min-cut x:" << center_.position.x << ", y:" << center_.position.y << std::endl;
+        auto vecLaserXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
+            angleLaser2Map - angleLaser2Baselink);
+        double angle = PoseUtilities::angleBetweenVectors2D(vecLaserXAxis, vecLaser2Feature);
+        double dist = PoseUtilities::distance(PoseUtilities::convert(tfLaser2Map), feature);
+        double sign = PoseUtilities::signOf(cos(angleLaser2Baselink));
+        center_.position.x = sign * dist * cos(angle);
+        center_.position.y = sign * dist * sin(angle);
+#ifndef DEBUG
+        std::cout << "vector along " << angles::to_degrees(angleLaser2Map - angleLaser2Baselink) <<
+            " x:" << vecLaserXAxis.x << ", y:" << vecLaserXAxis.y << std::endl;
+        std::cout << "angle between vectors:" << angles::to_degrees(angle) << std::endl;
+        std::cout << "distance between feature and laser:" << dist << std::endl;
+        std::cout << "sign of " << cos(angleLaser2Baselink) <<
+            " is " << sign << std::endl;
+        std::cout << "pose for min-cut x:" << center_.position.x << ", y:" << center_.position.y << std::endl;
+#endif
     }
 
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)

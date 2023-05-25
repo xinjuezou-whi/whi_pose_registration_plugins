@@ -28,7 +28,7 @@ class PoseUtilities
 public:
     static const std::string& VERSION()
     {
-        return "00.04";
+        return "00.05";
     }
 
 public:
@@ -137,8 +137,8 @@ public:
     static geometry_msgs::Point createVector2D(const geometry_msgs::Point& Start, double Length, double Theta)
 	{
         geometry_msgs::Point point;
-        point.x = Length * sin(Theta) + Start.x;
-        point.y = Length * cos(Theta) + Start.y;
+        point.x = Length * cos(Theta) + Start.x;
+        point.y = Length * sin(Theta) + Start.y;
 		return point;
 	}
 
@@ -153,6 +153,12 @@ public:
 
 		// return signOf(z) * acos(dot / (magFrom * magTo));
         return acos(dot / (magFrom * magTo));
+	}
+
+    template <typename T>
+    static int signOf(T Val)
+	{
+		return (T(0) < Val) - (Val < T(0));
 	}
 
 #ifdef DEBUG

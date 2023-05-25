@@ -36,7 +36,7 @@ namespace pose_registration_plugins
         std::string laserScanTopic;
         std::vector<double> center;
         node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
-        node_handle_->param("pose_registration/PlainPose/base_link_frame", base_link_frame_, std::string("base_link"));
+        node_handle_->param("pose_registration/PlainPose/laser_frame", laser_frame_, std::string("base_link"));
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius", feature_arch_radius_, 0.06);
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius_tolerance",
             feature_arch_radius_tolerance_, 0.015);
@@ -92,11 +92,33 @@ namespace pose_registration_plugins
 
     void PlainPoseRegistration::update(const ros::TimerEvent& Event)
     {
-        auto tfGeometry = listenTf("map", base_link_frame_, ros::Time(0));
-
-        std::cout << "dddddddddddddddddddd x:" << tfGeometry.transform.translation.x <<
+        auto tfGeometry = listenTf("map", laser_frame_, ros::Time(0));
+#ifndef DEBUG
+        std::cout << "laser x:" << tfGeometry.transform.translation.x <<
             ", y:" << tfGeometry.transform.translation.y <<
             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(tfGeometry.transform.rotation)[2]) << std::endl;
+#endif
+
+        geometry_msgs::Pose feature;
+        feature.position.x = 8.43586;
+        feature.position.y = 1.0276;
+        feature.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
+
+        geometry_msgs::TransformStamped trans;
+        trans.transform.rotation = PoseUtilities::fromEuler(0.0, 0.0, 
+            PoseUtilities::toEuler(tfGeometry.transform.rotation)[2] -
+            PoseUtilities::toEuler(feature.orientation)[2]);
+        auto featureAlignLaser = PoseUtilities::applyTransform(feature, trans);
+#ifndef DEBUG
+        std::cout << "feature align baselink x:" << featureAlignLaser.position.x <<
+            ", y:" << featureAlignLaser.position.y <<
+            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(featureAlignLaser.orientation)[2]) << std::endl;
+        std::cout << "offset to baselink x:" << featureAlignLaser.position.x - tfGeometry.transform.translation.x <<
+            ", y:" << featureAlignLaser.position.y - tfGeometry.transform.translation.y <<
+            ", yaw:" << angles::to_degrees(
+            PoseUtilities::toEuler(featureAlignLaser.orientation)[2] - 
+            PoseUtilities::toEuler(tfGeometry.transform.rotation)[2]) << std::endl;
+#endif
     }
 
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)

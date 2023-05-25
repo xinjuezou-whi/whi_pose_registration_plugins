@@ -39,7 +39,6 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
 
     private:
-        std::string base_link_frame_{ "base_link" };
         double feature_arch_radius_{ 0.06 };
         double feature_arch_radius_tolerance_{ 0.01 };
         bool downsampling_{ true };

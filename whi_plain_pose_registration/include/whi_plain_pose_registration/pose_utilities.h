@@ -44,13 +44,19 @@ public:
 		return tf2::toMsg(orientation);
     }
 
-    static std::array<double, 3> toEuler(const geometry_msgs::Quaternion& Orientation)
+    static std::array<double, 3> toEuler(const tf2::Quaternion& Quaternion)
     {
-        tf2::Quaternion quat(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
         double roll = 0.0, pitch = 0.0, yaw = 0.0;
-  		tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  		tf2::Matrix3x3(Quaternion).getRPY(roll, pitch, yaw);
 
         return { roll, pitch, yaw };
+    }
+
+    static std::array<double, 3> toEuler(const geometry_msgs::Quaternion& Orientation)
+    {
+        tf2::Quaternion quaternion(Orientation.x, Orientation.y, Orientation.z, Orientation.w);
+
+        return toEuler(quaternion);
     }
 
     static geometry_msgs::Quaternion getRelativeRotation(const geometry_msgs::Quaternion& From,
@@ -83,7 +89,7 @@ public:
     }
 
     static geometry_msgs::Pose applyTransform(const geometry_msgs::Pose& Src,
-		const geometry_msgs::TransformStamped& Transform)
+        const geometry_msgs::TransformStamped& Transform)
     {
         // apply the transform to the pose
         geometry_msgs::Pose transformedPose;

@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.10" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.11" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -34,10 +34,9 @@ namespace pose_registration_plugins
         /// params
         // common
         std::string laserScanTopic;
-        std::string amclTopic;
         std::vector<double> center;
         node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
-        node_handle_->param("pose_registration/PlainPose/amcl_topic", amclTopic, std::string("amcl_pose"));
+        node_handle_->param("pose_registration/PlainPose/base_link_frame", base_link_frame_, std::string("base_link"));
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius", feature_arch_radius_, 0.06);
         node_handle_->param("pose_registration/PlainPose/feature_arch_radius_tolerance",
             feature_arch_radius_tolerance_, 0.015);
@@ -80,13 +79,24 @@ namespace pose_registration_plugins
 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
-        sub_amcl_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<geometry_msgs::PoseWithCovarianceStamped>(
-			amclTopic, 10, std::bind(&PlainPoseRegistration::subCallbackEstimated, this, std::placeholders::_1)));
+
+        ros::Duration updateFreq = ros::Duration(1.0 / 20.0);
+        non_realtime_loop_ = std::make_unique<ros::Timer>(
+            node_handle_->createTimer(updateFreq, std::bind(&PlainPoseRegistration::update, this, std::placeholders::_1)));
     }
 
     bool PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
 
+    }
+
+    void PlainPoseRegistration::update(const ros::TimerEvent& Event)
+    {
+        auto tfGeometry = listenTf("map", base_link_frame_, ros::Time(0));
+
+        std::cout << "dddddddddddddddddddd x:" << tfGeometry.transform.translation.x <<
+            ", y:" << tfGeometry.transform.translation.y <<
+            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(tfGeometry.transform.rotation)[2]) << std::endl;
     }
 
     void PlainPoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
@@ -244,61 +254,61 @@ namespace pose_registration_plugins
         std::cout << "processing time: " << (ros::Time::now() - begin).toSec() << std::endl;
     }
 
-    void PlainPoseRegistration::subCallbackEstimated(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& Estimated)
-    {
-#ifndef DEBUG
-        std::cout << "estimated x:" << Estimated->pose.pose.position.x << ", y:" << Estimated->pose.pose.position.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(Estimated->pose.pose.orientation)[2]) << std::endl;
+//     void PlainPoseRegistration::subCallbackEstimated(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& Estimated)
+//     {
+// #ifndef DEBUG
+//         std::cout << "estimated x:" << Estimated->pose.pose.position.x << ", y:" << Estimated->pose.pose.position.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(Estimated->pose.pose.orientation)[2]) << std::endl;
 
-        geometry_msgs::Pose charger;
-        charger.position.x = 9.38556;
-        charger.position.y = 0.241915;
-        charger.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
+//         geometry_msgs::Pose charger;
+//         charger.position.x = 9.38556;
+//         charger.position.y = 0.241915;
+//         charger.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
 
-        geometry_msgs::Pose feature;
-        feature.position.x = 8.43586;
-        feature.position.y = 1.0276;
-        feature.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
+//         geometry_msgs::Pose feature;
+//         feature.position.x = 8.43586;
+//         feature.position.y = 1.0276;
+//         feature.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
 
-        geometry_msgs::Pose origin;
-        origin.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+//         geometry_msgs::Pose origin;
+//         origin.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
 
-        auto diffOrigin2Base = PoseUtilities::getTransform(origin, Estimated->pose.pose);
-        std::cout << "diff origin to base pose x:" << diffOrigin2Base.transform.translation.x <<
-            ", y:" << diffOrigin2Base.transform.translation.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffOrigin2Base.transform.rotation)[2]) << std::endl;
+//         auto diffOrigin2Base = PoseUtilities::getTransform(origin, Estimated->pose.pose);
+//         std::cout << "diff origin to base pose x:" << diffOrigin2Base.transform.translation.x <<
+//             ", y:" << diffOrigin2Base.transform.translation.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffOrigin2Base.transform.rotation)[2]) << std::endl;
 
-        auto diffOrigin2Feature = PoseUtilities::getTransform(origin, feature);
-        std::cout << "diff origin to feature pose x:" << diffOrigin2Feature.transform.translation.x <<
-            ", y:" << diffOrigin2Feature.transform.translation.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffOrigin2Feature.transform.rotation)[2]) << std::endl;
+//         auto diffOrigin2Feature = PoseUtilities::getTransform(origin, feature);
+//         std::cout << "diff origin to feature pose x:" << diffOrigin2Feature.transform.translation.x <<
+//             ", y:" << diffOrigin2Feature.transform.translation.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffOrigin2Feature.transform.rotation)[2]) << std::endl;
 
-        auto diffFeature2Base = PoseUtilities::getTransform(feature, Estimated->pose.pose);
-        std::cout << "diff from feature to base pose x:" << diffFeature2Base.transform.translation.x <<
-            ", y:" << diffFeature2Base.transform.translation.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffFeature2Base.transform.rotation)[2]) << std::endl;
+//         auto diffFeature2Base = PoseUtilities::getTransform(feature, Estimated->pose.pose);
+//         std::cout << "diff from feature to base pose x:" << diffFeature2Base.transform.translation.x <<
+//             ", y:" << diffFeature2Base.transform.translation.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffFeature2Base.transform.rotation)[2]) << std::endl;
 
-        geometry_msgs::Pose diffPose;
-        diffPose.position.x = diffOrigin2Feature.transform.translation.x - diffOrigin2Base.transform.translation.x;
-        diffPose.position.y = diffOrigin2Feature.transform.translation.y - diffOrigin2Base.transform.translation.y;
-        diffPose.orientation = PoseUtilities::fromEuler(0, 0,
-            PoseUtilities::toEuler(diffOrigin2Feature.transform.rotation)[2] - PoseUtilities::toEuler(diffOrigin2Base.transform.rotation)[2]);
-        std::cout << "diff2 from feature to base pose x:" << diffPose.position.x <<
-            ", y:" << diffPose.position.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffPose.orientation)[2]) << std::endl;
+//         geometry_msgs::Pose diffPose;
+//         diffPose.position.x = diffOrigin2Feature.transform.translation.x - diffOrigin2Base.transform.translation.x;
+//         diffPose.position.y = diffOrigin2Feature.transform.translation.y - diffOrigin2Base.transform.translation.y;
+//         diffPose.orientation = PoseUtilities::fromEuler(0, 0,
+//             PoseUtilities::toEuler(diffOrigin2Feature.transform.rotation)[2] - PoseUtilities::toEuler(diffOrigin2Base.transform.rotation)[2]);
+//         std::cout << "diff2 from feature to base pose x:" << diffPose.position.x <<
+//             ", y:" << diffPose.position.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(diffPose.orientation)[2]) << std::endl;
 
-        geometry_msgs::TransformStamped trans2Base;
-        trans2Base.transform.rotation = PoseUtilities::fromEuler(0, 0,
-            -PoseUtilities::toEuler(diffPose.orientation)[2]);
-        geometry_msgs::Pose ddd = PoseUtilities::applyTransform(diffPose, trans2Base);
-        std::cout << "ddd pose x:" << ddd.position.x <<
-            ", y:" << ddd.position.y <<
-            ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(ddd.orientation)[2]) << std::endl;
+//         geometry_msgs::TransformStamped trans2Base;
+//         trans2Base.transform.rotation = PoseUtilities::fromEuler(0, 0,
+//             -PoseUtilities::toEuler(diffPose.orientation)[2]);
+//         geometry_msgs::Pose ddd = PoseUtilities::applyTransform(diffPose, trans2Base);
+//         std::cout << "ddd pose x:" << ddd.position.x <<
+//             ", y:" << ddd.position.y <<
+//             ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(ddd.orientation)[2]) << std::endl;
 
-        center_.position.x = -ddd.position.x;
-        center_.position.y = -ddd.position.y;
-#endif
-    }
+//         center_.position.x = -ddd.position.x;
+//         center_.position.y = -ddd.position.y;
+// #endif
+//     }
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::PlainPoseRegistration, whi_pose_registration::BasePoseRegistration)
 } // namespace pose_registration_plugins

@@ -35,10 +35,11 @@ namespace pose_registration_plugins
         bool computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
 
     private:
+        void update(const ros::TimerEvent& Event);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
-        void subCallbackEstimated(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& Estimated);
 
     private:
+        std::string base_link_frame_{ "base_link" };
         double feature_arch_radius_{ 0.06 };
         double feature_arch_radius_tolerance_{ 0.01 };
         bool downsampling_{ true };
@@ -67,6 +68,7 @@ namespace pose_registration_plugins
         // conditional Euclidean
         double cluster_radius_{ 0.2 };
         double intensity_tolerance_{ 5.0 };
+        std::unique_ptr<ros::Timer> non_realtime_loop_{ nullptr };
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_converted_{ nullptr };

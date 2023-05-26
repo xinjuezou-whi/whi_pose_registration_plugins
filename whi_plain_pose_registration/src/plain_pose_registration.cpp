@@ -120,7 +120,6 @@ namespace pose_registration_plugins
         double angle = PoseUtilities::angleBetweenVectors2D(vecLaserXAxis, vecLaser2Feature);
         double dist = PoseUtilities::distance(PoseUtilities::convert(tfLaser2Map), pose_feature_);
         double sign = PoseUtilities::signOf(cos(angleLaser2Baselink));
-
         {
             const std::lock_guard<std::mutex> lock(mtx_min_cut_);
             center_.x = sign * dist * cos(angle);

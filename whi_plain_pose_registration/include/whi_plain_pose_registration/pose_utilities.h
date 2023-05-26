@@ -126,6 +126,11 @@ public:
             pow(PoseA.position.y - PoseB.position.y, 2) + pow(PoseA.position.z - PoseB.position.z, 2));
     }
 
+    static double distance(const geometry_msgs::Point& PointA, const geometry_msgs::Point& PointB)
+    {
+        return sqrt(pow(PointA.x - PointA.x, 2) + pow(PointA.y - PointA.y, 2) + pow(PointA.z - PointA.z, 2));
+    }
+
     static geometry_msgs::Point createVector2D(const geometry_msgs::Point& Start, const geometry_msgs::Point& End)
 	{
         geometry_msgs::Point point;

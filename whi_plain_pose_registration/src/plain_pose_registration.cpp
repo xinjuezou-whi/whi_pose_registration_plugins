@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.13" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.15" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -34,7 +34,18 @@ namespace pose_registration_plugins
         /// params
         // common
         std::string laserScanTopic;
-        std::vector<double> center;
+        std::vector<double> feature;
+        if (!node_handle_->getParam("pose_registration/feature_pose", feature))
+        {
+            feature.resize(3);
+        }
+        else
+        {
+            pose_feature_.position.x = feature[0];
+            pose_feature_.position.y = feature[1];
+            pose_feature_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(feature[2]));
+        }
+        node_handle_->param("pose_registration/PlainPose/tf_listener_frequency", tf_listener_frequency_, 20.0);
         node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
         node_handle_->param("pose_registration/PlainPose/laser_frame", laser_frame_, std::string("laser"));
         node_handle_->param("pose_registration/PlainPose/base_link_frame", base_link_frame_, std::string("base_link"));
@@ -56,13 +67,6 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/feature_min_size", feature_min_size_, 10);
         node_handle_->param("pose_registration/PlainPose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
-        if (!node_handle_->getParam("pose_registration/PlainPose/center_point", center))
-        {
-            center.resize(3);
-        }
-        center_.position.x = center[0];
-        center_.position.y = center[1];
-        center_.position.z = center[2];
         node_handle_->param("pose_registration/PlainPose/k_neighbour", k_neighbour_, 50);
         node_handle_->param("pose_registration/PlainPose/k_radius", k_radius_, 0.2);
         // specific
@@ -81,7 +85,7 @@ namespace pose_registration_plugins
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
 
-        ros::Duration updateFreq = ros::Duration(1.0 / 20.0);
+        ros::Duration updateFreq = ros::Duration(1.0 / tf_listener_frequency_);
         non_realtime_loop_ = std::make_unique<ros::Timer>(
             node_handle_->createTimer(updateFreq, std::bind(&PlainPoseRegistration::update, this, std::placeholders::_1)));
     }
@@ -97,41 +101,36 @@ namespace pose_registration_plugins
         auto tfLaser2Baselink = listenTf(base_link_frame_, laser_frame_, ros::Time(0));
         double angleLaser2Map = PoseUtilities::toEuler(tfLaser2Map.transform.rotation)[2];
         double angleLaser2Baselink = PoseUtilities::toEuler(tfLaser2Baselink.transform.rotation)[2];
-#ifndef DEBUG
+#ifdef DEBUG
         std::cout << "laser in map x:" << tfLaser2Map.transform.translation.x <<
             ", y:" << tfLaser2Map.transform.translation.y << ", yaw:" << angles::to_degrees(angleLaser2Map) << std::endl;
         std::cout << "laser in baselink x:" << tfLaser2Baselink.transform.translation.x <<
-            ", y:" << tfLaser2Baselink.transform.translation.y << ", yaw:" << angles::to_degrees(angleLaser2Baselink) <<
-            " and rad is " << angleLaser2Baselink << std::endl;
+            ", y:" << tfLaser2Baselink.transform.translation.y << ", yaw:" << angles::to_degrees(angleLaser2Baselink) << std::endl;
 #endif
-
-        geometry_msgs::Pose feature;
-        feature.position.x = 8.43586;
-        feature.position.y = 1.0276;
-        feature.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(139.384));
 
         geometry_msgs::Point pntLaser;
         pntLaser.x = tfLaser2Map.transform.translation.x;
         pntLaser.y = tfLaser2Map.transform.translation.y;
         geometry_msgs::Point pntFeature;
-        pntFeature.x = feature.position.x;
-        pntFeature.y = feature.position.y;
+        pntFeature.x = pose_feature_.position.x;
+        pntFeature.y = pose_feature_.position.y;
         auto vecLaser2Feature = PoseUtilities::createVector2D(pntLaser, pntFeature);
         auto vecLaserXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
             angleLaser2Map - angleLaser2Baselink);
         double angle = PoseUtilities::angleBetweenVectors2D(vecLaserXAxis, vecLaser2Feature);
-        double dist = PoseUtilities::distance(PoseUtilities::convert(tfLaser2Map), feature);
+        double dist = PoseUtilities::distance(PoseUtilities::convert(tfLaser2Map), pose_feature_);
         double sign = PoseUtilities::signOf(cos(angleLaser2Baselink));
-        center_.position.x = sign * dist * cos(angle);
-        center_.position.y = sign * dist * sin(angle);
-#ifndef DEBUG
+
+        {
+            const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+            center_.x = sign * dist * cos(angle);
+            center_.y = sign * dist * sin(angle);
+        }
+#ifdef DEBUG
         std::cout << "vector along " << angles::to_degrees(angleLaser2Map - angleLaser2Baselink) <<
             " x:" << vecLaserXAxis.x << ", y:" << vecLaserXAxis.y << std::endl;
         std::cout << "angle between vectors:" << angles::to_degrees(angle) << std::endl;
-        std::cout << "distance between feature and laser:" << dist << std::endl;
-        std::cout << "sign of " << cos(angleLaser2Baselink) <<
-            " is " << sign << std::endl;
-        std::cout << "pose for min-cut x:" << center_.position.x << ", y:" << center_.position.y << std::endl;
+        std::cout << "pose for min-cut x:" << center_.x << ", y:" << center_.y << std::endl;
 #endif
     }
 
@@ -183,9 +182,12 @@ namespace pose_registration_plugins
         if (segment_type_ == "cut_min")
         {
             pcl::PointXYZI pointCenter;
-            pointCenter.x = center_.position.x;
-            pointCenter.y = center_.position.y;
-            pointCenter.z = center_.position.z;
+            {
+                const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+                pointCenter.x = center_.x;
+                pointCenter.y = center_.y;
+                pointCenter.z = center_.z;
+            }
             clusterIndices = PclUtilities<pcl::PointXYZI>::segmentMinCut(pclOperating, pointCenter,
                 radius_, cut_min_neighbour_, sigma_, weight_);
         }
@@ -208,6 +210,7 @@ namespace pose_registration_plugins
         }
 #endif
 
+        std::vector<std::vector<double>> foundCircles;
         for (const auto& cluster : clusterIndices)
         {
             pcl::PointCloud<pcl::PointXYZI>::Ptr cloudFeatures(new pcl::PointCloud<pcl::PointXYZI>());
@@ -223,7 +226,7 @@ namespace pose_registration_plugins
                 std::vector<pcl::PointIndices> featureIndices;
                 featureIndices = PclUtilities<pcl::PointXYZI>::segmentEuclidean(cloudFeatures,
                     feature_segment_distance_thresh_, feature_min_size_, feature_max_size_);
-#ifndef DEBUG
+#ifdef DEBUG
                 std::cout << "total feature number from features: " << featureIndices.size() << std::endl;
                 for (int i = 0; i < featureIndices.size(); ++i)
                 {
@@ -250,42 +253,33 @@ namespace pose_registration_plugins
                     if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelCircle2D(cloudFeature,
                         circle_distance_thresh_, inliersIndicesCircle, coeffsCircle))
                     {
+#ifdef DEBUG
                         std::cout << "circle coeffs count: " << coeffsCircle.size() << std::endl;
                         for (const auto& it : coeffsCircle)
                         {
                             std::cout << it << std::endl;
                         }
-
-                        if (fabs(coeffsCircle[2] - feature_arch_radius_) > feature_arch_radius_tolerance_)
-                        {
-                            if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelLine(cloudFeature,
-                                line_distance_thresh_, inliersIndicesLine, coeffsLine))
-                            {
-                                std::cout << "line coeffs count: " << coeffsLine.size() << std::endl;
-                                for (const auto& it : coeffsLine)
-                                {
-                                    std::cout << it << std::endl;
-                                }
-                            }
-                        }
-                    }
-                    else if (PclUtilities<pcl::PointXYZI>::sampleConsensusModelLine(cloudFeature,
-                        line_distance_thresh_, inliersIndicesLine, coeffsLine))
-                    {
-#ifdef DEBUG
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr inliers(new pcl::PointCloud<pcl::PointXYZI>());
-                        PclUtilities<pcl::PointXYZI>::extractTo(cloudFeature, inliersIndicesLine, inliers);
-                        pcl::PointCloud<pcl::PointXYZI>::Ptr outliers(new pcl::PointCloud<pcl::PointXYZI>());
-                        PclUtilities<pcl::PointXYZI>::extractTo(cloudFeature, inliersIndicesLine, outliers, true);
-                        static PclVisualize<pcl::PointXYZI> viewer;
-                        viewer.viewCloud(inliers, "debug_inliers", 3);
-                        viewer.viewCloud(outliers, "debug_outliers", 1, std::array<double, 3>({ 1.0, 0.0, 0.0}));
 #endif
-
+                        if (fabs(coeffsCircle[2] - feature_arch_radius_) < feature_arch_radius_tolerance_)
+                        {
+                            foundCircles.push_back(coeffsCircle);
+                        }
                     }
                 }
             }
         }
+
+#ifndef DEBUG
+        std::cout << "found circle number " << foundCircles.size() << std::endl;
+        for (const auto& circle : foundCircles)
+        {
+            std::cout << "coeffs" << std::endl;
+            for (const auto& coeff : circle)
+            {
+                std::cout << coeff << std::endl;
+            }
+        }
+#endif
 
         std::cout << "processing time: " << (ros::Time::now() - begin).toSec() << std::endl;
     }

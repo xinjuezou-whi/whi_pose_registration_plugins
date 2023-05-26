@@ -21,6 +21,7 @@ Changelog:
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <memory>
+#include <mutex>
 
 namespace pose_registration_plugins
 {
@@ -41,6 +42,7 @@ namespace pose_registration_plugins
     private:
         double feature_arch_radius_{ 0.06 };
         double feature_arch_radius_tolerance_{ 0.01 };
+        geometry_msgs::Pose pose_feature_;
         bool downsampling_{ true };
         std::vector<double> downsampling_coeffs_;
         double line_distance_thresh_{ 0.001 };
@@ -48,12 +50,14 @@ namespace pose_registration_plugins
         double feature_segment_distance_thresh_{ 0.04 };
         int feature_min_size_{ 10 };
         int feature_max_size_{ 200 };
+        double tf_listener_frequency_{ 20 };
+        std::mutex mtx_min_cut_;
         /// segment related
         std::string segment_type_{ "region_growing" };
         int k_neighbour_{ 50 };
         double k_radius_{ 0.2 };
         // cut-min
-        geometry_msgs::Pose center_;
+        geometry_msgs::Point center_;
         double radius_{ 0.1 };
         double sigma_{ 0.25 };
         double weight_{ 0.8 };

@@ -34,6 +34,7 @@ namespace pose_registration_plugins
     public:
         void initialize() override;
         bool computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+        int goalState() override;
 
     private:
         void update(const ros::TimerEvent& Event);
@@ -43,6 +44,7 @@ namespace pose_registration_plugins
         double feature_arch_radius_{ 0.06 };
         double feature_arch_radius_tolerance_{ 0.01 };
         geometry_msgs::Pose pose_feature_;
+        double distance_to_charge_{ 0.0 };
         bool downsampling_{ true };
         std::vector<double> downsampling_coeffs_;
         double line_distance_thresh_{ 0.001 };
@@ -52,6 +54,19 @@ namespace pose_registration_plugins
         int feature_max_size_{ 200 };
         double tf_listener_frequency_{ 20 };
         std::mutex mtx_min_cut_;
+        geometry_msgs::TransformStamped tf_baselink_map_;
+        geometry_msgs::TransformStamped tf_laser_map_;
+        geometry_msgs::TransformStamped tf_laser_baselink_;
+        geometry_msgs::Pose pose_target_;
+        double rotate_angle_{ 0.0 };
+        enum State
+        { STA_ALIGNED = 0,
+          STA_TO_VERTICAL, STA_MOVE_VERTICAL,
+          STA_TO_ALIGN, STA_MOVE_ALIGN,
+          STA_DONE, STA_FAILED
+        };
+        int state_{ STA_ALIGNED };
+        int try_count_{ 0 };
         /// segment related
         std::string segment_type_{ "region_growing" };
         int k_neighbour_{ 50 };

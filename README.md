@@ -10,4 +10,4 @@ plugins implementation for registrating the pose of charger
 ![charging_logic-Page-3 drawio](https://github.com/xinjuezou-whi/whi_pose_registration_plugins/assets/72239958/326fb8de-aea3-40ee-995c-22dd553bd544)
 
 #### State machine
-![charging_logic-Page-5 drawio](https://github.com/xinjuezou-whi/whi_pose_registration_plugins/assets/72239958/bbd6e2fb-cc6b-4838-8a54-1523091f91e2)
+![charging_logic-Page-5 drawio](https://github.com/xinjuezou-whi/whi_pose_registration_plugins/assets/72239958/80918cd1-b95f-4ec8-a2b9-f87afdd0942a)

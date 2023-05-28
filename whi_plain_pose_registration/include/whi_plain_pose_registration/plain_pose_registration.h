@@ -33,7 +33,7 @@ namespace pose_registration_plugins
 
     public:
         void initialize() override;
-        bool computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+        void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
         int goalState() override;
 
     private:
@@ -87,6 +87,7 @@ namespace pose_registration_plugins
         double cluster_radius_{ 0.2 };
         double intensity_tolerance_{ 5.0 };
         std::unique_ptr<ros::Timer> non_realtime_loop_{ nullptr };
+        std::unique_ptr<ros::Publisher> pub_stage_target_{ nullptr };
 #ifndef DEBUG
         std::unique_ptr<ros::Publisher> pub_projected_{ nullptr };
         std::unique_ptr<ros::Publisher> pub_converted_{ nullptr };

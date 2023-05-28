@@ -120,6 +120,26 @@ public:
         return transformedPose;
     }
 
+    static geometry_msgs::Pose applyVecRotation(const geometry_msgs::Pose& Src,
+        const geometry_msgs::Quaternion& Rotation)
+    {
+        tf2::Vector3 vec;
+        vec.setX(Src.position.x);
+        vec.setY(Src.position.y);
+        vec.setZ(Src.position.z);
+        tf2::Quaternion rotation;
+        tf2::fromMsg(Rotation, rotation);
+        auto rotatedVec = tf2::quatRotate(rotation, vec);
+
+        geometry_msgs::Pose rotatedPose;
+        rotatedPose.position.x = rotatedVec.x();
+        rotatedPose.position.y = rotatedVec.y();
+        rotatedPose.position.z = rotatedVec.z();
+        rotatedPose.orientation = Src.orientation;
+
+        return rotatedPose;
+    }
+
     static double distance(const geometry_msgs::Pose& PoseA, const geometry_msgs::Pose& PoseB)
     {
         return sqrt(pow(PoseA.position.x - PoseB.position.x, 2) + 

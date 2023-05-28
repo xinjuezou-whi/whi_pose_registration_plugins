@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.16" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.18" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -35,6 +35,7 @@ namespace pose_registration_plugins
         // common
         std::string laserScanTopic;
         std::vector<double> feature;
+        bool pubStageTarget;
         if (!node_handle_->getParam("pose_registration/feature_pose", feature))
         {
             feature.resize(3);
@@ -70,6 +71,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/PlainPose/segment_type", segment_type_, std::string("region_growing"));
         node_handle_->param("pose_registration/PlainPose/k_neighbour", k_neighbour_, 50);
         node_handle_->param("pose_registration/PlainPose/k_radius", k_radius_, 0.2);
+        node_handle_->param("pose_registration/PlainPose/publish_stage_target", pubStageTarget, false);
         // specific
         node_handle_->param("pose_registration/PlainPose/min_cluster_size", min_cluster_size_, 50);
         node_handle_->param("pose_registration/PlainPose/max_cluster_size", max_cluster_size_, 1000);
@@ -85,14 +87,29 @@ namespace pose_registration_plugins
 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&PlainPoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
+        if (pubStageTarget)
+        {
+            pub_stage_target_ = std::make_unique<ros::Publisher>(
+                node_handle_->advertise<geometry_msgs::PoseStamped>("stage_target", 10, false));
+        }
 
         ros::Duration updateFreq = ros::Duration(1.0 / tf_listener_frequency_);
         non_realtime_loop_ = std::make_unique<ros::Timer>(
             node_handle_->createTimer(updateFreq, std::bind(&PlainPoseRegistration::update, this, std::placeholders::_1)));
     }
 
-    bool PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
+    void PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
+        // initiate
+        if (state_ == STA_DONE || state_ == STA_FAILED)
+        {
+            CmdVel.linear.x = 0.0;
+            CmdVel.angular.z = 0.0;
+
+            state_ = STA_ALIGNED;
+            return;
+        }
+
         geometry_msgs::TransformStamped transBaselinkMap;
         {
             const std::lock_guard<std::mutex> lock(mtx_min_cut_);
@@ -129,21 +146,26 @@ namespace pose_registration_plugins
             double yDiff = pose_target_.position.y - transBaselinkMap.transform.translation.y;
             if (fabs(xDiff) < 0.02 && fabs(yDiff) < 0.02)
             {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(-rotate_angle_) * 0.1;
-
-                // target of rotating back to align with laser's x axis
-                pose_target_.position.x = 0.0;
-                pose_target_.position.y = 0.0;
-                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
-                    PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] - rotate_angle_);
-
                 if (state_ == STA_MOVE_VERTICAL)
                 {
+                    double sign = PoseUtilities::signOf(-rotate_angle_);
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = sign * 0.1;
+
+                    // target of rotating back to align with laser's x axis
+                    pose_target_.position.x = 0.0;
+                    pose_target_.position.y = 0.0;
+                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
+                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] -
+                        (rotate_angle_ + sign * 0.5 * M_PI));
+
                     state_ = STA_TO_ALIGN;
                 }
                 else if (state_ == STA_MOVE_ALIGN)
                 {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+
                     state_ = STA_DONE;
                 }
             }
@@ -159,6 +181,13 @@ namespace pose_registration_plugins
                     CmdVel.angular.z = PoseUtilities::signOf(yDiff * CmdVel.linear.x) * 0.05;
                 }
             }
+        }
+
+        if (pub_stage_target_)
+        {
+            geometry_msgs::PoseStamped target;
+            target.pose = pose_target_;
+            pub_stage_target_->publish(target);
         }
     }
 
@@ -408,12 +437,17 @@ namespace pose_registration_plugins
                 geometry_msgs::Pose poseMidMap = PoseUtilities::applyTransform(poseMid, transLaserMap);
                 double angleLaser = PoseUtilities::toEuler(poseMidMap.orientation)[2];
                 double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                rotate_angle_ = angleLaser - angleBaselink - PoseUtilities::signOf(angleBaselink) * 0.5 * M_PI;
+#ifndef DEBUG
+                std::cout << "base pose x:" << transBaselinkMap.transform.translation.x <<
+                    ", y:" << transBaselinkMap.transform.translation.y <<
+                    ", yaw:" << angles::to_degrees(angleBaselink) << std::endl;
                 std::cout << "midMap pose x:" << poseMidMap.position.x << ", y:" << poseMidMap.position.y <<
                     ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(poseMidMap.orientation)[2]) << std::endl;
-                rotate_angle_ = angleLaser - angleBaselink - PoseUtilities::signOf(angleBaselink) * 0.5 * M_PI;
                 std::cout << "base angle:" << angles::to_degrees(angleBaselink) << 
                     ", rotate angle:" << angles::to_degrees(rotate_angle_) <<
                     ", target angle:" << angles::to_degrees(angleBaselink + rotate_angle_) << std::endl;
+#endif
                 geometry_msgs::Point pntBase;
                 pntBase.x = transBaselinkMap.transform.translation.x;
                 pntBase.y = transBaselinkMap.transform.translation.y;
@@ -425,15 +459,16 @@ namespace pose_registration_plugins
                 auto vecMidXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
                     angleLaser - angleLaser2Baselink);  
                 double deltaAngle = PoseUtilities::angleBetweenVectors2D(vecMidXAxis, vecBase2Mid);
+#ifndef DEBUG
+                std::cout << "angle of diff between laser and base :" << angles::to_degrees(deltaAngle) << std::endl;
+#endif
                 if (fabs(deltaAngle) < 0.087)
                 {
                     // target of charging position
                     geometry_msgs::Pose poseDelta;
                     poseDelta.position.x = distance_to_charge_;
                     poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                    geometry_msgs::TransformStamped transCharging;
-                    transCharging.transform.rotation = transBaselinkMap.transform.rotation;
-                    pose_target_ = PoseUtilities::applyTransform(poseDelta, transCharging);
+                    pose_target_ = PoseUtilities::applyTransform(poseDelta, transBaselinkMap);
 
                     state_ = STA_MOVE_ALIGN;
                 }
@@ -442,22 +477,18 @@ namespace pose_registration_plugins
                     // target of perpenticular to laser's x axis and base_link lay on x axis of laser
                     double dist = PoseUtilities::distance(PoseUtilities::convert(transBaselinkMap), poseMidMap);
                     double deltaDist = dist * sin(deltaAngle);
-                    std::cout << "angle delta:" << angles::to_degrees(deltaAngle) << std::endl;
                     geometry_msgs::Pose poseDelta;
                     poseDelta.position.x = deltaDist;
-                    poseDelta.orientation = transBaselinkMap.transform.rotation;
-                    geometry_msgs::TransformStamped transDelta;
-                    transDelta.transform.rotation = PoseUtilities::fromEuler(0.0, 0.0, rotate_angle_);
-                    auto transformedDelta = PoseUtilities::applyTransform(poseDelta, transDelta);
-                    std::cout << "transformed delta pose x:" << transformedDelta.position.x <<
-                        ", y:" << transformedDelta.position.y <<
-                        ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(transformedDelta.orientation)[2]) << std::endl;
-                    pose_target_.position.x = transBaselinkMap.transform.translation.x + transformedDelta.position.x;
-                    pose_target_.position.y = transBaselinkMap.transform.translation.y + transformedDelta.position.y;
-                    pose_target_.orientation = transformedDelta.orientation;
+                    poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + rotate_angle_);
+                    auto rotatedDelta = PoseUtilities::applyVecRotation(poseDelta, pose_target_.orientation);
+                    pose_target_.position.x = transBaselinkMap.transform.translation.x + rotatedDelta.position.x;
+                    pose_target_.position.y = transBaselinkMap.transform.translation.y + rotatedDelta.position.y;
+#ifndef DEBUG
                     std::cout << "target pose x:" << pose_target_.position.x << ", y:" << pose_target_.position.y <<
                         ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(pose_target_.orientation)[2]) << std::endl;
-
+#endif
+                    
                     if (++try_count_ > 3)
                     {
                         try_count_ = 0;

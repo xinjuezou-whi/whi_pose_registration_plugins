@@ -186,6 +186,7 @@ namespace pose_registration_plugins
         if (pub_stage_target_)
         {
             geometry_msgs::PoseStamped target;
+            target.header.frame_id = "map";
             target.pose = pose_target_;
             pub_stage_target_->publish(target);
         }
@@ -498,6 +499,15 @@ namespace pose_registration_plugins
                     {
                         state_ = STA_TO_VERTICAL;
                     }
+#ifdef DEBUG
+                    if (pub_stage_target_)
+                    {
+                        geometry_msgs::PoseStamped target;
+                        target.header.frame_id = "map";
+                        target.pose = pose_target_;
+                        pub_stage_target_->publish(target);
+                    }
+#endif
                 }
             }
 

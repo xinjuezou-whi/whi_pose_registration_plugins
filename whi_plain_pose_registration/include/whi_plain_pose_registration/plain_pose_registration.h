@@ -65,7 +65,7 @@ namespace pose_registration_plugins
           STA_TO_ALIGN, STA_MOVE_ALIGN,
           STA_DONE, STA_FAILED
         };
-        int state_{ STA_ALIGNED };
+        int state_{ STA_DONE };
         int try_count_{ 0 };
         /// segment related
         std::string segment_type_{ "region_growing" };

@@ -60,6 +60,8 @@ namespace pose_registration_plugins
         geometry_msgs::TransformStamped tf_laser_baselink_;
         geometry_msgs::Pose pose_target_;
         double found_feature_angle_{ 0.0 };
+        double xy_tolerance_{ 0.02 };
+        double yaw_tolerance_{ 0.087 };
         enum State
         {
             STA_ALIGNED = 0,

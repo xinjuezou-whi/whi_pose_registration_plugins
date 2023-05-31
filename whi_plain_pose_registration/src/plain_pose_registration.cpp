@@ -47,6 +47,9 @@ namespace pose_registration_plugins
             pose_feature_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(feature[2]));
         }
         node_handle_->param("pose_registration/distance_to_charge", distance_to_charge_, 0.0);
+        node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
+        node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);
+        yaw_tolerance_ = angles::from_degrees(yaw_tolerance_);
         node_handle_->param("pose_registration/PlainPose/tf_listener_frequency", tf_listener_frequency_, 20.0);
         node_handle_->param("pose_registration/PlainPose/laser_scan_topic", laserScanTopic, std::string("scan"));
         node_handle_->param("pose_registration/PlainPose/laser_frame", laser_frame_, std::string("laser"));
@@ -120,7 +123,7 @@ namespace pose_registration_plugins
         {
             double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
                 PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-            if (fabs(angleDiff) < 0.087)
+            if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
@@ -144,7 +147,7 @@ namespace pose_registration_plugins
         {
             double xDiff = pose_target_.position.x - transBaselinkMap.transform.translation.x;
             double yDiff = pose_target_.position.y - transBaselinkMap.transform.translation.y;
-            if (fabs(xDiff) < 0.02 && fabs(yDiff) < 0.02)
+            if (fabs(xDiff) < xy_tolerance_ && fabs(yDiff) < xy_tolerance_)
             {
                 if (state_ == STA_MOVE_VERTICAL)
                 {
@@ -184,7 +187,7 @@ namespace pose_registration_plugins
                 {
                     // forward
                     CmdVel.linear.x = 0.06;
-                    if (angleAbs > 0.087)
+                    if (angleAbs > yaw_tolerance_)
                     {
                         CmdVel.angular.z = PoseUtilities::signOf(angleFromX) * 0.05;
                     }
@@ -193,7 +196,7 @@ namespace pose_registration_plugins
                 {
                     // backward
                     CmdVel.linear.x = -0.06;
-                    if (0.5 * M_PI - angleAbs > 0.087)
+                    if (0.5 * M_PI - angleAbs > yaw_tolerance_)
                     {
                         CmdVel.angular.z = PoseUtilities::signOf(-angleFromX) * 0.05;
                     }
@@ -450,7 +453,7 @@ namespace pose_registration_plugins
                     ", align delta:" << angles::to_degrees(delta) << std::endl;
                 std::cout << "feature x:" << pntFeature.x << ",y:" << pntFeature.y << std::endl;
 #endif
-                if (fabs(delta) < 0.087)
+                if (fabs(delta) < yaw_tolerance_)
                 {
                     // target of charging position
                     geometry_msgs::Pose poseDelta;

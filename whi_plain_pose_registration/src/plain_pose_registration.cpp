@@ -148,16 +148,15 @@ namespace pose_registration_plugins
             {
                 if (state_ == STA_MOVE_VERTICAL)
                 {
-                    double sign = PoseUtilities::signOf(-rotate_angle_);
+                    double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                    double sign = PoseUtilities::signOf(found_feature_angle_ - angleBaselink);
                     CmdVel.linear.x = 0.0;
                     CmdVel.angular.z = sign * 0.1;
 
                     // target of rotating back to align with laser's x axis
                     pose_target_.position.x = 0.0;
                     pose_target_.position.y = 0.0;
-                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
-                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] +
-                        sign * 0.5 * M_PI);
+                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + sign * 0.5 * M_PI);
 
                     state_ = STA_TO_ALIGN;
                 }
@@ -434,7 +433,7 @@ namespace pose_registration_plugins
                     poseMidMap.orientation = pose_feature_.orientation;
                 }
 
-                double angleFeature = PoseUtilities::toEuler(poseMidMap.orientation)[2];
+                found_feature_angle_ = PoseUtilities::toEuler(poseMidMap.orientation)[2];
                 double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
                 geometry_msgs::Point pntBase;
                 pntBase.x = transBaselinkMap.transform.translation.x;
@@ -442,11 +441,11 @@ namespace pose_registration_plugins
                 geometry_msgs::Point pntFeature;
                 pntFeature.x = poseMidMap.position.x;
                 pntFeature.y = poseMidMap.position.y;
-                auto vecFeature = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0, angleFeature);
+                auto vecFeature = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0, found_feature_angle_);
                 auto vecBaseFeature = PoseUtilities::createVector2D(pntBase, pntFeature);
                 double delta = PoseUtilities::angleBetweenVectors2D(vecFeature, vecBaseFeature);
 #ifndef DEBUG
-                std::cout << "feature angle in map:" << angles::to_degrees(angleFeature) <<
+                std::cout << "feature angle in map:" << angles::to_degrees(found_feature_angle_) <<
                     ", baselink angle in map:" << angles::to_degrees(angleBaselink) <<
                     ", align delta:" << angles::to_degrees(delta) << std::endl;
                 std::cout << "feature x:" << pntFeature.x << ",y:" << pntFeature.y << std::endl;
@@ -468,7 +467,7 @@ namespace pose_registration_plugins
                     geometry_msgs::Point deltaPoint;
                     deltaPoint.x = distDelta;
                     auto rotation = PoseUtilities::fromEuler(0.0, 0.0,
-                        angleFeature + PoseUtilities::signOf(delta) * 0.5 * M_PI);
+                        found_feature_angle_ + PoseUtilities::signOf(delta) * 0.5 * M_PI);
                     auto deltaInMap = PoseUtilities::applyVecRotation(deltaPoint, rotation);
                     pose_target_.position.x = transBaselinkMap.transform.translation.x + deltaInMap.x;
                     pose_target_.position.y = transBaselinkMap.transform.translation.y + deltaInMap.y;

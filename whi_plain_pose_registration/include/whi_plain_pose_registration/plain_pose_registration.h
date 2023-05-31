@@ -59,7 +59,7 @@ namespace pose_registration_plugins
         geometry_msgs::TransformStamped tf_map_laser_;
         geometry_msgs::TransformStamped tf_laser_baselink_;
         geometry_msgs::Pose pose_target_;
-        double rotate_angle_{ 0.0 };
+        double found_feature_angle_{ 0.0 };
         enum State
         {
             STA_ALIGNED = 0,

@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.18" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.19" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -156,8 +156,8 @@ namespace pose_registration_plugins
                     pose_target_.position.x = 0.0;
                     pose_target_.position.y = 0.0;
                     pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
-                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] -
-                        (rotate_angle_ + sign * 0.5 * M_PI));
+                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] +
+                        sign * 0.5 * M_PI);
 
                     state_ = STA_TO_ALIGN;
                 }
@@ -171,14 +171,33 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = PoseUtilities::signOf(xDiff) * 0.06;
-                if (fabs(yDiff) < 0.02)
+                geometry_msgs::Point pntBase;
+                pntBase.x = transBaselinkMap.transform.translation.x;
+                pntBase.y = transBaselinkMap.transform.translation.y;
+                geometry_msgs::Point pntTarget;
+                pntTarget.x = pose_target_.position.x;
+                pntTarget.y = pose_target_.position.y;
+                auto vecBase2Target = PoseUtilities::createVector2D(pntBase, pntTarget);
+                auto vecXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0, 0.0);
+                auto angleFromX = PoseUtilities::angleBetweenVectors2D(vecXAxis, vecBase2Target);
+                auto angleAbs = fabs(angleFromX);
+                if (angleAbs < 0.5 * M_PI)
                 {
-                    CmdVel.angular.z = 0.0;
+                    // forward
+                    CmdVel.linear.x = 0.06;
+                    if (angleAbs > 0.087)
+                    {
+                        CmdVel.angular.z = PoseUtilities::signOf(angleFromX) * 0.05;
+                    }
                 }
                 else
                 {
-                    CmdVel.angular.z = PoseUtilities::signOf(yDiff * CmdVel.linear.x) * 0.05;
+                    // backward
+                    CmdVel.linear.x = -0.06;
+                    if (0.5 * M_PI - angleAbs > 0.087)
+                    {
+                        CmdVel.angular.z = PoseUtilities::signOf(-angleFromX) * 0.05;
+                    }
                 }
             }
         }
@@ -216,45 +235,22 @@ namespace pose_registration_plugins
             const std::lock_guard<std::mutex> lock(mtx_min_cut_);
             tf_baselink_map_ = listenTf("map", base_link_frame_, ros::Time(0));
             tf_laser_map_ = listenTf("map", laser_frame_, ros::Time(0));
+            tf_map_laser_ = listenTf(laser_frame_, "map", ros::Time(0));
             tf_laser_baselink_ = listenTf(base_link_frame_, laser_frame_, ros::Time(0));
         }
 
         if (state_ == STA_ALIGNED)
         {
-            // calculate the pose of feature in laser frame
-            double angleLaser2Map = PoseUtilities::toEuler(tf_laser_map_.transform.rotation)[2];
-            double angleLaser2Baselink = PoseUtilities::toEuler(tf_laser_baselink_.transform.rotation)[2];
-#ifdef DEBUG
-            std::cout << "laser in map x:" << tf_laser_map_.transform.translation.x <<
-                ", y:" << tf_laser_map_.transform.translation.y <<
-                ", yaw:" << angles::to_degrees(angleLaser2Map) << std::endl;
-            std::cout << "laser in baselink x:" << tf_laser_baselink_.transform.translation.x <<
-                ", y:" << tf_laser_baselink_.transform.translation.y <<
-                ", yaw:" << angles::to_degrees(angleLaser2Baselink) << std::endl;
-#endif
-            geometry_msgs::Point pntLaser;
-            pntLaser.x = tf_laser_map_.transform.translation.x;
-            pntLaser.y = tf_laser_map_.transform.translation.y;
-            geometry_msgs::Point pntFeature;
-            pntFeature.x = pose_feature_.position.x;
-            pntFeature.y = pose_feature_.position.y;
-            auto vecLaser2Feature = PoseUtilities::createVector2D(pntLaser, pntFeature);
-            auto vecLaserXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
-                angleLaser2Map - angleLaser2Baselink);
-            double angle = PoseUtilities::angleBetweenVectors2D(vecLaserXAxis, vecLaser2Feature);
-            double dist = PoseUtilities::distance(PoseUtilities::convert(tf_laser_map_), pose_feature_);
-            double sign = PoseUtilities::signOf(cos(angleLaser2Baselink));
-
+            // calculate the feature pose in laser frame
+            auto featureInLaser = PoseUtilities::applyTransform(pose_feature_, tf_map_laser_);
             {
                 const std::lock_guard<std::mutex> lock(mtx_min_cut_);
-                center_.x = sign * dist * cos(angle);
-                center_.y = sign * dist * sin(angle);
+                center_.x = featureInLaser.position.x;
+                center_.y = featureInLaser.position.y;
             }
-#ifdef DEBUG
-            std::cout << "vector along " << angles::to_degrees(angleLaser2Map - angleLaser2Baselink) <<
-                " x:" << vecLaserXAxis.x << ", y:" << vecLaserXAxis.y << std::endl;
-            std::cout << "angle between vectors:" << angles::to_degrees(angle) << std::endl;
-            std::cout << "pose for min-cut x:" << center_.x << ", y:" << center_.y << std::endl;
+#ifndef DEBUG
+            std::cout << "featureInLaser x:" << featureInLaser.position.x << ",y:" << featureInLaser.position.y <<
+                ",yaw:" << angles::to_degrees(PoseUtilities::toEuler(featureInLaser.orientation)[2]) << std::endl;
 #endif
         }
     }
@@ -409,22 +405,6 @@ namespace pose_registration_plugins
 #endif
             if (!foundCircles.empty())
             {
-                // calculate the difference in laser frame
-                geometry_msgs::Pose poseMid;
-                if (foundCircles.size() == 2)
-                {
-                    poseMid.position.x = foundCircles[0][0] + 0.5 * (foundCircles[1][0] - foundCircles[0][0]);
-                    poseMid.position.y = foundCircles[0][1] + 0.5 * (foundCircles[1][1] - foundCircles[0][1]);
-                    poseMid.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                }
-                else if (foundCircles.size() == 1)
-                {
-                    poseMid.position.x = foundCircles[0][0];
-                    poseMid.position.y = foundCircles[0][1];
-                    poseMid.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                }
-                std::cout << "middle pose x:" << poseMid.position.x << ", y:" << poseMid.position.y << std::endl;
-
                 geometry_msgs::TransformStamped transLaserMap;
                 geometry_msgs::TransformStamped transBaselinkMap;
                 geometry_msgs::TransformStamped transLaserBaselink;
@@ -435,35 +415,43 @@ namespace pose_registration_plugins
                     transLaserBaselink = tf_laser_baselink_;
                 }
 
-                geometry_msgs::Pose poseMidMap = PoseUtilities::applyTransform(poseMid, transLaserMap);
-                double angleLaser = PoseUtilities::toEuler(poseMidMap.orientation)[2];
+                // calculate the difference in laser frame
+                geometry_msgs::Pose poseMidLaser;
+                geometry_msgs::Pose poseMidMap;
+                if (foundCircles.size() == 2)
+                {
+                    poseMidLaser.position.x = foundCircles[0][0] + 0.5 * (foundCircles[1][0] - foundCircles[0][0]);
+                    poseMidLaser.position.y = foundCircles[0][1] + 0.5 * (foundCircles[1][1] - foundCircles[0][1]);
+                    poseMidLaser.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                    poseMidMap = PoseUtilities::applyTransform(poseMidLaser, transLaserMap);
+                }
+                else if (foundCircles.size() == 1)
+                {
+                    poseMidLaser.position.x = foundCircles[0][0];
+                    poseMidLaser.position.y = foundCircles[0][1];
+                    poseMidLaser.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                    poseMidMap = PoseUtilities::applyTransform(poseMidLaser, transLaserMap);
+                    poseMidMap.orientation = pose_feature_.orientation;
+                }
+
+                double angleFeature = PoseUtilities::toEuler(poseMidMap.orientation)[2];
                 double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                rotate_angle_ = angleLaser - angleBaselink - PoseUtilities::signOf(angleBaselink) * 0.5 * M_PI;
-#ifndef DEBUG
-                std::cout << "base pose x:" << transBaselinkMap.transform.translation.x <<
-                    ", y:" << transBaselinkMap.transform.translation.y <<
-                    ", yaw:" << angles::to_degrees(angleBaselink) << std::endl;
-                std::cout << "midMap pose x:" << poseMidMap.position.x << ", y:" << poseMidMap.position.y <<
-                    ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(poseMidMap.orientation)[2]) << std::endl;
-                std::cout << "base angle:" << angles::to_degrees(angleBaselink) << 
-                    ", rotate angle:" << angles::to_degrees(rotate_angle_) <<
-                    ", target angle:" << angles::to_degrees(angleBaselink + rotate_angle_) << std::endl;
-#endif
                 geometry_msgs::Point pntBase;
                 pntBase.x = transBaselinkMap.transform.translation.x;
                 pntBase.y = transBaselinkMap.transform.translation.y;
-                geometry_msgs::Point pntMid;
-                pntMid.x = poseMidMap.position.x;
-                pntMid.y = poseMidMap.position.y;
-                double angleLaser2Baselink = PoseUtilities::toEuler(transLaserBaselink.transform.rotation)[2];
-                auto vecBase2Mid = PoseUtilities::createVector2D(pntBase, pntMid);
-                auto vecMidXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
-                    angleLaser - angleLaser2Baselink);  
-                double deltaAngle = PoseUtilities::angleBetweenVectors2D(vecMidXAxis, vecBase2Mid);
+                geometry_msgs::Point pntFeature;
+                pntFeature.x = poseMidMap.position.x;
+                pntFeature.y = poseMidMap.position.y;
+                auto vecFeature = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0, angleFeature);
+                auto vecBaseFeature = PoseUtilities::createVector2D(pntBase, pntFeature);
+                double delta = PoseUtilities::angleBetweenVectors2D(vecFeature, vecBaseFeature);
 #ifndef DEBUG
-                std::cout << "angle of diff between laser and base :" << angles::to_degrees(deltaAngle) << std::endl;
+                std::cout << "feature angle in map:" << angles::to_degrees(angleFeature) <<
+                    ", baselink angle in map:" << angles::to_degrees(angleBaselink) <<
+                    ", align delta:" << angles::to_degrees(delta) << std::endl;
+                std::cout << "feature x:" << pntFeature.x << ",y:" << pntFeature.y << std::endl;
 #endif
-                if (fabs(deltaAngle) < 0.087)
+                if (fabs(delta) < 0.087)
                 {
                     // target of charging position
                     geometry_msgs::Pose poseDelta;
@@ -476,18 +464,19 @@ namespace pose_registration_plugins
                 else
                 {
                     // target of perpenticular to laser's x axis and base_link lay on x axis of laser
-                    double dist = PoseUtilities::distance(PoseUtilities::convert(transBaselinkMap), poseMidMap);
-                    double deltaDist = dist * sin(deltaAngle);
-                    geometry_msgs::Pose poseDelta;
-                    poseDelta.position.x = deltaDist;
-                    poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + rotate_angle_);
-                    auto rotatedDelta = PoseUtilities::applyVecRotation(poseDelta, pose_target_.orientation);
-                    pose_target_.position.x = transBaselinkMap.transform.translation.x + rotatedDelta.position.x;
-                    pose_target_.position.y = transBaselinkMap.transform.translation.y + rotatedDelta.position.y;
+                    double distDelta = fabs(sin(delta)) * PoseUtilities::distance(pntBase, pntFeature);
+                    geometry_msgs::Point deltaPoint;
+                    deltaPoint.x = distDelta;
+                    auto rotation = PoseUtilities::fromEuler(0.0, 0.0,
+                        angleFeature + PoseUtilities::signOf(delta) * 0.5 * M_PI);
+                    auto deltaInMap = PoseUtilities::applyVecRotation(deltaPoint, rotation);
+                    pose_target_.position.x = transBaselinkMap.transform.translation.x + deltaInMap.x;
+                    pose_target_.position.y = transBaselinkMap.transform.translation.y + deltaInMap.y;
+                    pose_target_.orientation = rotation;
 #ifndef DEBUG
-                    std::cout << "target pose x:" << pose_target_.position.x << ", y:" << pose_target_.position.y <<
-                        ", yaw:" << angles::to_degrees(PoseUtilities::toEuler(pose_target_.orientation)[2]) << std::endl;
+                    std::cout << "rotated angle:" << angles::to_degrees(PoseUtilities::toEuler(rotation)[2]) << std::endl;
+                    std::cout << "distDelta:" << distDelta << std::endl;
+                    std::cout << "delta in map x:" << deltaInMap.x << ",y:" << deltaInMap.y << std::endl;
 #endif
                     
                     if (++try_count_ > 3)
@@ -499,7 +488,7 @@ namespace pose_registration_plugins
                     {
                         state_ = STA_TO_VERTICAL;
                     }
-#ifdef DEBUG
+#ifndef DEBUG
                     if (pub_stage_target_)
                     {
                         geometry_msgs::PoseStamped target;

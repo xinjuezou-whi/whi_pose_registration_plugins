@@ -56,14 +56,16 @@ namespace pose_registration_plugins
         std::mutex mtx_min_cut_;
         geometry_msgs::TransformStamped tf_baselink_map_;
         geometry_msgs::TransformStamped tf_laser_map_;
+        geometry_msgs::TransformStamped tf_map_laser_;
         geometry_msgs::TransformStamped tf_laser_baselink_;
         geometry_msgs::Pose pose_target_;
         double rotate_angle_{ 0.0 };
         enum State
-        { STA_ALIGNED = 0,
-          STA_TO_VERTICAL, STA_MOVE_VERTICAL,
-          STA_TO_ALIGN, STA_MOVE_ALIGN,
-          STA_DONE, STA_FAILED
+        {
+            STA_ALIGNED = 0,
+            STA_TO_VERTICAL, STA_MOVE_VERTICAL,
+            STA_TO_ALIGN, STA_MOVE_ALIGN,
+            STA_DONE, STA_FAILED
         };
         int state_{ STA_DONE };
         int try_count_{ 0 };

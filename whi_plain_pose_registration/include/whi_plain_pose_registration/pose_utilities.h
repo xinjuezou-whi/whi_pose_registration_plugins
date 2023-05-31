@@ -28,7 +28,7 @@ class PoseUtilities
 public:
     static const std::string& VERSION()
     {
-        return "00.05";
+        return "00.07";
     }
 
 public:
@@ -140,6 +140,25 @@ public:
         return rotatedPose;
     }
 
+    static geometry_msgs::Point applyVecRotation(const geometry_msgs::Point& Src,
+        const geometry_msgs::Quaternion& Rotation)
+    {
+        tf2::Vector3 vec;
+        vec.setX(Src.x);
+        vec.setY(Src.y);
+        vec.setZ(Src.z);
+        tf2::Quaternion rotation;
+        tf2::fromMsg(Rotation, rotation);
+        auto rotatedVec = tf2::quatRotate(rotation, vec);
+
+        geometry_msgs::Point rotatedPoint;
+        rotatedPoint.x = rotatedVec.x();
+        rotatedPoint.y = rotatedVec.y();
+        rotatedPoint.z = rotatedVec.z();
+
+        return rotatedPoint;
+    }
+
     static double distance(const geometry_msgs::Pose& PoseA, const geometry_msgs::Pose& PoseB)
     {
         return sqrt(pow(PoseA.position.x - PoseB.position.x, 2) + 
@@ -148,7 +167,7 @@ public:
 
     static double distance(const geometry_msgs::Point& PointA, const geometry_msgs::Point& PointB)
     {
-        return sqrt(pow(PointA.x - PointA.x, 2) + pow(PointA.y - PointA.y, 2) + pow(PointA.z - PointA.z, 2));
+        return sqrt(pow(PointA.x - PointB.x, 2) + pow(PointA.y - PointB.y, 2) + pow(PointA.z - PointB.z, 2));
     }
 
     static geometry_msgs::Point createVector2D(const geometry_msgs::Point& Start, const geometry_msgs::Point& End)
@@ -169,15 +188,18 @@ public:
 
     static double angleBetweenVectors2D(const geometry_msgs::Point& From, const geometry_msgs::Point& To)
 	{
-		double dot = From.x * To.x + From.y * To.y;
-		double magFrom = sqrt(From.x * From.x + From.y * From.y);
-		double magTo = sqrt(To.x * To.x + To.y * To.y);
+		// double dot = From.x * To.x + From.y * To.y;
+		// double magFrom = sqrt(From.x * From.x + From.y * From.y);
+		// double magTo = sqrt(To.x * To.x + To.y * To.y);
 
 		// // axis of cross product
 		// double z = From.x * To.y - From.y * To.x;
 
 		// return signOf(z) * acos(dot / (magFrom * magTo));
-        return acos(dot / (magFrom * magTo));
+        double dot = From.x * To.x + From.y * To.y;
+        double det = From.x * To.y - From.y * To.x;
+
+        return atan2(det, dot);
 	}
 
     template <typename T>

@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.19" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.20" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -140,7 +140,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(angleDiff) * 0.1;
+                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.1;
             }
         }
         else if (state_ == STA_MOVE_VERTICAL || state_ == STA_MOVE_ALIGN)
@@ -152,7 +152,7 @@ namespace pose_registration_plugins
                 if (state_ == STA_MOVE_VERTICAL)
                 {
                     double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                    double sign = PoseUtilities::signOf(found_feature_angle_ - angleBaselink);
+                    double sign = PoseUtilities::signOf(sin(found_feature_angle_ - angleBaselink));
                     CmdVel.linear.x = 0.0;
                     CmdVel.angular.z = sign * 0.1;
 
@@ -180,7 +180,8 @@ namespace pose_registration_plugins
                 pntTarget.x = pose_target_.position.x;
                 pntTarget.y = pose_target_.position.y;
                 auto vecBase2Target = PoseUtilities::createVector2D(pntBase, pntTarget);
-                auto vecXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0, 0.0);
+                auto vecXAxis = PoseUtilities::createVector2D(geometry_msgs::Point(), 1.0,
+                    PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2]);
                 auto angleFromX = PoseUtilities::angleBetweenVectors2D(vecXAxis, vecBase2Target);
                 auto angleAbs = fabs(angleFromX);
                 if (angleAbs < 0.5 * M_PI)
@@ -217,12 +218,10 @@ namespace pose_registration_plugins
     {
         if (state_ == STA_DONE)
         {
-            state_ = STA_ALIGNED;
             return GS_REACHED;
         }
         else if (state_ == STA_FAILED)
         {
-            state_ = STA_ALIGNED;
             return GS_FAILED;
         }
         else

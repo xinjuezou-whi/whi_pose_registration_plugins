@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.20" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.21" << std::endl;
 	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -103,16 +103,6 @@ namespace pose_registration_plugins
 
     void PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
-        // initiate
-        if (state_ == STA_DONE || state_ == STA_FAILED)
-        {
-            CmdVel.linear.x = 0.0;
-            CmdVel.angular.z = 0.0;
-
-            state_ = STA_ALIGNED;
-            return;
-        }
-
         geometry_msgs::TransformStamped transBaselinkMap;
         {
             const std::lock_guard<std::mutex> lock(mtx_min_cut_);
@@ -204,6 +194,11 @@ namespace pose_registration_plugins
                 }
             }
         }
+        else
+        {
+            CmdVel.linear.x = 0.0;
+            CmdVel.angular.z = 0.0;
+        }
 
         if (pub_stage_target_)
         {
@@ -212,6 +207,11 @@ namespace pose_registration_plugins
             target.pose = pose_target_;
             pub_stage_target_->publish(target);
         }
+    }
+
+    void PlainPoseRegistration::standby()
+    {
+        state_ = STA_ALIGNED;
     }
 
     int PlainPoseRegistration::goalState()
@@ -404,6 +404,7 @@ namespace pose_registration_plugins
                 }
             }
 #endif
+            bool failedFind = false;
             if (!foundCircles.empty())
             {
                 geometry_msgs::TransformStamped transLaserMap;
@@ -433,6 +434,10 @@ namespace pose_registration_plugins
                     poseMidLaser.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
                     poseMidMap = PoseUtilities::applyTransform(poseMidLaser, transLaserMap);
                     poseMidMap.orientation = pose_feature_.orientation;
+                }
+                else
+                {
+                    failedFind = true;
                 }
 
                 found_feature_angle_ = PoseUtilities::toEuler(poseMidMap.orientation)[2];
@@ -474,30 +479,29 @@ namespace pose_registration_plugins
                     pose_target_.position.x = transBaselinkMap.transform.translation.x + deltaInMap.x;
                     pose_target_.position.y = transBaselinkMap.transform.translation.y + deltaInMap.y;
                     pose_target_.orientation = rotation;
-#ifndef DEBUG
+#ifdef DEBUG
                     std::cout << "rotated angle:" << angles::to_degrees(PoseUtilities::toEuler(rotation)[2]) << std::endl;
                     std::cout << "distDelta:" << distDelta << std::endl;
                     std::cout << "delta in map x:" << deltaInMap.x << ",y:" << deltaInMap.y << std::endl;
 #endif
                     
-                    if (++try_count_ > 3)
-                    {
-                        try_count_ = 0;
-                        state_ = STA_FAILED;
-                    }
-                    else
-                    {
-                        state_ = STA_TO_VERTICAL;
-                    }
-#ifndef DEBUG
-                    if (pub_stage_target_)
-                    {
-                        geometry_msgs::PoseStamped target;
-                        target.header.frame_id = "map";
-                        target.pose = pose_target_;
-                        pub_stage_target_->publish(target);
-                    }
-#endif
+                    state_ = STA_TO_VERTICAL;
+                }
+
+                find_tried_time_ = 0.0;
+            }
+            else
+            {
+                failedFind = true;
+            }
+
+            if (failedFind)
+            {
+                find_tried_time_ += (ros::Time::now() - begin).toSec();
+                if (find_tried_time_ > 5.0)
+                {
+                    find_tried_time_ = 0.0;
+                    state_ = STA_FAILED;
                 }
             }
 

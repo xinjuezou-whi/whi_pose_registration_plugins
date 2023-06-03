@@ -34,6 +34,7 @@ namespace pose_registration_plugins
     public:
         void initialize() override;
         void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+        void standby() override;
         int goalState() override;
 
     private:
@@ -70,7 +71,7 @@ namespace pose_registration_plugins
             STA_DONE, STA_FAILED
         };
         int state_{ STA_DONE };
-        int try_count_{ 0 };
+        double find_tried_time_{ 0.0 };
         /// segment related
         std::string segment_type_{ "region_growing" };
         int k_neighbour_{ 50 };

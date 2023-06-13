@@ -3,7 +3,7 @@
 
 ## Compile
 For Ubuntu 18.04, error might be: "laser_geometry.h:47:10: fatal error: Eigen/Core: No such file or directory"
-Replace "#include <Eigen/Core>" to "#include <eigen3/Eigen/Core>" in file "laser_geometry.h"
+Replace "#include <Eigen/Core>" to "#include <eigen3/Eigen/Core>" in file "laser_geometry.h", which should locates in "/opt/ros/<ros distro>/include/laser_geometry/"
 ```
 //#include <Eigen/Core>
 #include <eigen3/Eigen/Core> // WHI

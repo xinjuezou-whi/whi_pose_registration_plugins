@@ -51,7 +51,7 @@ class PclUtilities
 public:
     static const std::string& VERSION()
     {
-        return "00.08";
+        return "00.09";
     }
 
 public:
@@ -372,7 +372,7 @@ public:
         return clusters;
     }
 
-    static std::vector<pcl::PointIndices> segmentSAC(const typename pcl::PointCloud<T>::Ptr Src, int Model,
+    static std::vector<int> segmentSAC(const typename pcl::PointCloud<T>::Ptr Src, int Model,
         double DistanceThresh)
     {
         // create the segmentation object

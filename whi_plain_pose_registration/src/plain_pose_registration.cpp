@@ -105,7 +105,7 @@ namespace pose_registration_plugins
     {
         geometry_msgs::TransformStamped transBaselinkMap;
         {
-            const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+            const std::lock_guard<std::mutex> lock(mtx_cut_min_);
             transBaselinkMap = tf_baselink_map_;
         }
 
@@ -233,7 +233,7 @@ namespace pose_registration_plugins
     void PlainPoseRegistration::update(const ros::TimerEvent& Event)
     {
         {
-            const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+            const std::lock_guard<std::mutex> lock(mtx_cut_min_);
             tf_baselink_map_ = listenTf("map", base_link_frame_, ros::Time(0));
             tf_laser_map_ = listenTf("map", laser_frame_, ros::Time(0));
             tf_map_laser_ = listenTf(laser_frame_, "map", ros::Time(0));
@@ -245,7 +245,7 @@ namespace pose_registration_plugins
             // calculate the feature pose in laser frame
             auto featureInLaser = PoseUtilities::applyTransform(pose_feature_, tf_map_laser_);
             {
-                const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+                const std::lock_guard<std::mutex> lock(mtx_cut_min_);
                 center_.x = featureInLaser.position.x;
                 center_.y = featureInLaser.position.y;
             }
@@ -307,7 +307,7 @@ namespace pose_registration_plugins
             {
                 pcl::PointXYZI pointCenter;
                 {
-                    const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+                    const std::lock_guard<std::mutex> lock(mtx_cut_min_);
                     pointCenter.x = center_.x;
                     pointCenter.y = center_.y;
                     pointCenter.z = center_.z;
@@ -411,7 +411,7 @@ namespace pose_registration_plugins
                 geometry_msgs::TransformStamped transBaselinkMap;
                 geometry_msgs::TransformStamped transLaserBaselink;
                 {
-                    const std::lock_guard<std::mutex> lock(mtx_min_cut_);
+                    const std::lock_guard<std::mutex> lock(mtx_cut_min_);
                     transLaserMap = tf_laser_map_;
                     transBaselinkMap = tf_baselink_map_;
                     transLaserBaselink = tf_laser_baselink_;

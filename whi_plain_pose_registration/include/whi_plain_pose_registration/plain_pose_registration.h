@@ -54,7 +54,7 @@ namespace pose_registration_plugins
         int feature_min_size_{ 10 };
         int feature_max_size_{ 200 };
         double tf_listener_frequency_{ 20 };
-        std::mutex mtx_min_cut_;
+        std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;
         geometry_msgs::TransformStamped tf_laser_map_;
         geometry_msgs::TransformStamped tf_map_laser_;

@@ -1,0 +1,9 @@
+<library path="lib/libwhi_locate_pose_registration">
+  <class name="pose_registration_plugins/LocatePoseRegistration"
+         type="pose_registration_plugins::LocatePoseRegistration"
+         base_class_type="whi_pose_registration::BasePoseRegistration">
+    <description>
+      A implementation of plain motion planning plugin for registrating charger
+    </description>
+  </class>
+</library>

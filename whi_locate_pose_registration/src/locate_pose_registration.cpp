@@ -26,7 +26,7 @@ namespace pose_registration_plugins
         : target_cloud_(new pcl::PointCloud<pcl::PointXYZ>()) ,BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.02" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.03" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -111,14 +111,9 @@ namespace pose_registration_plugins
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
 		    imuTopic, 10, std::bind(&LocatePoseRegistration::subCallbackImu, this, std::placeholders::_1)));
-
-        ros::Duration updateFreq = ros::Duration(1.0 / tf_listener_frequency_);
-        non_realtime_loop_ = std::make_unique<ros::Timer>(
-            node_handle_->createTimer(updateFreq, std::bind(&LocatePoseRegistration::update, this, std::placeholders::_1)));
- 
     }
 
-    void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
+    void LocatePoseRegistration::computeVelocityCommands(const std::string& GoalId, geometry_msgs::Twist& CmdVel)
     {
         const std::lock_guard<std::mutex> lock(mtx_imu_);
         if (state_ == STA_ALIGN)
@@ -449,17 +444,6 @@ namespace pose_registration_plugins
         {
             return GS_PROCEEDING;
         }
-    }
-
-    void LocatePoseRegistration::update(const ros::TimerEvent& Event)
-    {
-        {
-            // const std::lock_guard<std::mutex> lock(mtx_cut_min_);
-            // tf_baselink_map_ = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            //ROS_INFO("listenTf ,tf_baselink_map_, x:%f, y:%f ",tf_baselink_map_.transform.translation.x,tf_baselink_map_.transform.translation.y);
-
-        }
-        
     }
 
     void LocatePoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)

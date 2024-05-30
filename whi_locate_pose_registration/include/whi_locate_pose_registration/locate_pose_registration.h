@@ -35,12 +35,11 @@ namespace pose_registration_plugins
 
     public:
         void initialize() override;
-        void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+        void computeVelocityCommands(const std::string& GoalId, geometry_msgs::Twist& CmdVel) override;
         void standby() override;
         int goalState() override;
 
     private:
-        void update(const ros::TimerEvent& Event);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
 
@@ -106,9 +105,6 @@ namespace pose_registration_plugins
         int state_{ STA_DONE };
         int prestate_{ STA_DONE };
         double find_tried_time_{ 0.0 };
-
-        // conditional Euclidean
-        std::unique_ptr<ros::Timer> non_realtime_loop_{ nullptr };
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud_;
         bool issetimu_{ false };

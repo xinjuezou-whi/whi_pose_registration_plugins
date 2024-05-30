@@ -20,7 +20,7 @@ Changelog:
 #include "std_srvs/SetBool.h"
 #include <sensor_msgs/LaserScan.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include "whi_locate_pose_registration/pcl_utilities.h"
+#include "whi_pose_registration_common/pcl_utilities.h"
 #include <memory>
 #include <mutex>
 #include <sensor_msgs/Imu.h>

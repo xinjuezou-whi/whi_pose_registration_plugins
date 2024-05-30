@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   sensor_msgs
   whi_pose_registration
+  whi_pose_registration_common
   laser_geometry
   pcl_ros
 )

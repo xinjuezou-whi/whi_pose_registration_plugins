@@ -12,23 +12,22 @@ All text above must be included in any redistribution.
 
 ******************************************************************/
 #include "whi_locate_pose_registration/locate_pose_registration.h"
-#include "whi_locate_pose_registration/pcl_visualize.h"
-#include "whi_locate_pose_registration/pose_utilities.h"
+#include "whi_pose_registration_common/pcl_visualize.h"
+#include "whi_pose_registration_common/pose_utilities.h"
 
 #include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
 #include <thread>
 #include <chrono>
 
-//#include "whi_imu/imu.h"
 namespace pose_registration_plugins
 {
     LocatePoseRegistration::LocatePoseRegistration()
         : target_cloud_(new pcl::PointCloud<pcl::PointXYZ>()) ,BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.01.00" << std::endl;
-	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.02" << std::endl;
+	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
     void LocatePoseRegistration::initialize()
@@ -373,7 +372,8 @@ namespace pose_registration_plugins
                 {
                     state_ = STA_REGISTRATE_FINE;
                     ROS_INFO("start STA_REGISTRATE_FINE ");
-                }else if (prestate_ == STA_START)
+                }
+                else if (prestate_ == STA_START)
                 {
                     state_ = STA_REGISTRATE;
                     ROS_INFO("start STA_REGISTRATE ");
@@ -402,7 +402,8 @@ namespace pose_registration_plugins
                 if (prestate_ == STA_REGISTRATE || prestate_ == STA_REGISTRATE_FINE )
                 {
                     state_ = STA_ALIGN;
-                }else
+                }
+                else
                 {
                     state_ = prestate_;
                 }
@@ -478,9 +479,7 @@ namespace pose_registration_plugins
             //---------------------- 求最小包围圆 ----------------
 
             std::vector<mypoint> pvec;
-            int n = 0;
-            n = outcloud->points.size();
-            for(int i= 0; i< n ;i++)
+            for (int i = 0; i < outcloud->points.size(); ++i)
             {
                 mypoint onepoint;
                 onepoint.x = outcloud->points[i].x;
@@ -490,7 +489,7 @@ namespace pose_registration_plugins
             
             double minradius;
             mypoint center;
-            min_circle_cover(pvec, n, minradius, center);
+            min_circle_cover(pvec, minradius, center);
             ROS_INFO("radius : %.10lf \n  center.x: %.10lf center.y: %.10lf ",minradius,center.x, center.y);
             minradius = minradius + 0.080 ; 
             //--------------------- 在原点云上 mincut ------
@@ -521,7 +520,6 @@ namespace pose_registration_plugins
                 {
                     *minoutcloud = *cloudFeature;
                 }
-
             }
             //---------------------
             
@@ -638,16 +636,12 @@ namespace pose_registration_plugins
     void LocatePoseRegistration::subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata)
     {
         const std::lock_guard<std::mutex> lock(mtx_imu_);
-        //issetimu_ = true;
         tf2::Quaternion quaternion(Imudata->orientation.x, Imudata->orientation.y, Imudata->orientation.z,
             Imudata->orientation.w);
         angleyaw_imu_ = PoseUtilities::toEuler(quaternion)[2];
         //ROS_INFO("angleyaw_imu =%f ",angleyaw_imu_);
         auto tfImu = listenTf(base_link_frame_ ,"imu", ros::Time(0));
         imu_delta_ = atan(tfImu.transform.translation.y / tfImu.transform.translation.x);
-        //geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
-        //std::cout << "yaw : " << PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] << std::endl;
-
     }
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::LocatePoseRegistration, whi_pose_registration::BasePoseRegistration)

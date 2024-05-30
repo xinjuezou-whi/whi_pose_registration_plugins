@@ -12,9 +12,9 @@ All text above must be included in any redistribution.
 
 ******************************************************************/
 #include "whi_plain_pose_registration/plain_pose_registration.h"
-#include "whi_plain_pose_registration/pcl_utilities.h"
-#include "whi_plain_pose_registration/pcl_visualize.h"
-#include "whi_plain_pose_registration/pose_utilities.h"
+#include "whi_pose_registration_common/pcl_utilities.h"
+#include "whi_pose_registration_common/pcl_visualize.h"
+#include "whi_pose_registration_common/pose_utilities.h"
 
 #include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
@@ -26,7 +26,7 @@ namespace pose_registration_plugins
     {
         /// node version and copyright announcement
 	    std::cout << "\nWHI plain pose registration plugin VERSION 00.01.21" << std::endl;
-	    std::cout << "Copyright © 2023-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
+	    std::cout << "Copyright © 2023-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
     void PlainPoseRegistration::initialize()

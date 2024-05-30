@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(whi_locate_pose_registration)
+project(whi_pose_registration_common)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
@@ -11,11 +11,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   sensor_msgs
-  whi_pose_registration
-  whi_pose_registration_common
   laser_geometry
   pcl_ros
-  pcl_conversions
 )
 
 ## System dependencies are found with CMake's conventions
@@ -108,8 +105,8 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-  LIBRARIES ${PROJECT_NAME}
+  INCLUDE_DIRS include
+#  LIBRARIES ${PROJECT_NAME}
 #  CATKIN_DEPENDS control_msgs controller_manager hardware_interface joint_limits_interface ros_controllers roscpp std_msgs transmission_interface
 #  DEPENDS system_lib
 )
@@ -126,16 +123,13 @@ include_directories(
 )
 
 ## Declare a C++ library
-FILE(GLOB WHI_SDK_SRC
- "src/*.cpp"
-)
+# FILE(GLOB WHI_SDK_SRC
+#  "src/*.cpp"
+# )
 
 # add_library(${PROJECT_NAME}
 #   src/${PROJECT_NAME}/whi_plain_pose_registration.cpp
 # )
-add_library(${PROJECT_NAME}
-  ${WHI_SDK_SRC}
-)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -156,16 +150,16 @@ add_library(${PROJECT_NAME}
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(${PROJECT_NAME}
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
+# add_dependencies(${PROJECT_NAME}
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(${PROJECT_NAME}
-  ${catkin_LIBRARIES}
-  pcl_visualization
-)
+# target_link_libraries(${PROJECT_NAME}
+#   ${catkin_LIBRARIES}
+#   pcl_visualization
+# )
 
 #############
 ## Install ##

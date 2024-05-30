@@ -10,14 +10,15 @@ Reference:
 - https://github.com/PointCloudLibrary/pcl/tree/master/test for usage
 - https://github.com/PointCloudLibrary/pcl/tree/master/examples for usage
 
-Written by Yue Zhou, sevendull@163.com
+Written by Xinjue Zou, xinjue.zou.whi@gmail.com, Yue Zhou, sevendull@163.com
 
 GNU General Public License, check LICENSE for more information.
 All text above must be included in any redistribution.
 
 Changelog:
-2024-05-10: Initial version
-2022-xx-xx: xxx
+2023-05-18: Initial version
+2024-05-10: Added segment with normal vector
+2024-xx-xx: xxx
 ******************************************************************/
 #pragma once
 #include <sensor_msgs/LaserScan.h>
@@ -28,8 +29,8 @@ Changelog:
 #include <pcl/search/search.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/sample_consensus/ransac.h>
-//#include <pcl/sample_consensus/sac_model_circle.h>
-//#include <pcl/sample_consensus/sac_model_line.h>
+#include <pcl/sample_consensus/sac_model_circle.h>
+#include <pcl/sample_consensus/sac_model_line.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/features/normal_3d.h>
@@ -39,9 +40,9 @@ Changelog:
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/min_cut_segmentation.h>
-//#include <pcl/segmentation/region_growing.h>
-//#include <pcl/segmentation/region_growing_rgb.h>
-//#include <pcl/segmentation/conditional_euclidean_clustering.h>
+#include <pcl/segmentation/region_growing.h>
+#include <pcl/segmentation/region_growing_rgb.h>
+#include <pcl/segmentation/conditional_euclidean_clustering.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/search/organized.h>
 #include <pcl/features/normal_3d_omp.h>
@@ -51,7 +52,7 @@ Changelog:
 #include <pcl/registration/ia_ransac.h>
 #include <pcl/registration/correspondence_estimation.h>
 #include <pcl/registration/sample_consensus_prerejective.h>
-#include <pcl/registration/ndt.h>      // NDT配准算法
+#include <pcl/registration/ndt.h> // NDT配准算法
 #include <pcl/segmentation/impl/extract_clusters.hpp>
 #include <pcl/features/don.h>
 
@@ -170,6 +171,61 @@ public:
         return pclCloudfiltered;
     }
 
+    static pcl::PointCloud<pcl::Normal>::Ptr estimateNormalKn(const typename pcl::PointCloud<T>::Ptr Src,
+        int KNeighbours)
+    {
+        typename pcl::search::Search<T>::Ptr tree(new pcl::search::KdTree<T>());
+        pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>());
+        pcl::NormalEstimation<T, pcl::Normal> normalEstimator;
+        normalEstimator.setSearchMethod(tree);
+        normalEstimator.setInputCloud(Src);
+        normalEstimator.setKSearch(KNeighbours);
+        normalEstimator.compute(*normals);
+
+        return normals;
+    }
+
+    static std::pair<pcl::PointCloud<pcl::Normal>::Ptr, typename pcl::search::Search<T>::Ptr>
+        estimateNormalPairKn(const typename pcl::PointCloud<T>::Ptr Src, int KNeighbours)
+    {
+        typename pcl::search::Search<T>::Ptr tree(new pcl::search::KdTree<T>());
+        pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>());
+        pcl::NormalEstimation<T, pcl::Normal> normalEstimator;
+        normalEstimator.setSearchMethod(tree);
+        normalEstimator.setInputCloud(Src);
+        normalEstimator.setKSearch(KNeighbours);
+        normalEstimator.compute(*normals);
+
+        return std::make_pair(normals, tree);
+    }
+
+    static pcl::PointCloud<pcl::Normal>::Ptr estimateNormalKr(const typename pcl::PointCloud<T>::Ptr Src,
+        double KRadius)
+    {
+        typename pcl::search::Search<T>::Ptr tree(new pcl::search::KdTree<T>());
+        pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>());
+        pcl::NormalEstimation<T, pcl::Normal> normalEstimator;
+        normalEstimator.setSearchMethod(tree);
+        normalEstimator.setInputCloud(Src);
+        normalEstimator.setRadiusSearch(KRadius);
+        normalEstimator.compute(*normals);
+
+        return normals;
+    }
+
+    static std::pair<pcl::PointCloud<pcl::Normal>::Ptr, typename pcl::search::Search<T>::Ptr>
+        estimateNormalPairKr(const typename pcl::PointCloud<T>::Ptr Src, double KRadius)
+    {
+        typename pcl::search::Search<T>::Ptr tree(new pcl::search::KdTree<T>());
+        pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>());
+        pcl::NormalEstimation<T, pcl::Normal> normalEstimator;
+        normalEstimator.setSearchMethod(tree);
+        normalEstimator.setInputCloud(Src);
+        normalEstimator.setRadiusSearch(KRadius);
+        normalEstimator.compute(*normals);
+
+        return std::make_pair(normals, tree);
+    }
 
     static std::vector<pcl::PointIndices> segmentEuclidean(const typename pcl::PointCloud<T>::Ptr Src,
         double Tolerance, int MinClusterSize = 100, int MaxClusterSize = 25000)
@@ -188,7 +244,7 @@ public:
         ec.extract(clusters);
 
         return clusters;
-    }    
+    }
 
     static std::vector<pcl::PointIndices> segmentMinCut(const typename pcl::PointCloud<T>::Ptr Src,
         const T& Center, double Radius, int Neighbours = 5, double Sigma = 0.25, double Weight = 0.8)
@@ -207,6 +263,209 @@ public:
         seg.extract(clusters);
 
         return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentRegionGrowingKn(const typename pcl::PointCloud<T>::Ptr Src,
+        int KNeighbours, int Neighbours, double Angle, double Curvature,
+        int MinClusterSize = 100, int MaxClusterSize = 25000)
+    {
+        auto pair = estimateNormalPairKn(Src, KNeighbours);
+
+        pcl::RegionGrowing<T, pcl::Normal> reg;
+        reg.setMinClusterSize(MinClusterSize);
+        reg.setMaxClusterSize(MaxClusterSize);
+        reg.setSearchMethod(pair.second);
+        reg.setNumberOfNeighbours(Neighbours);
+        reg.setInputCloud(Src);
+        //reg.setIndices(indices);
+        reg.setInputNormals(pair.first);
+        reg.setSmoothnessThreshold(Angle);
+        reg.setCurvatureThreshold(Curvature);
+
+        std::vector<pcl::PointIndices> clusters;
+        reg.extract(clusters);
+
+        return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentRegionGrowingKr(const typename pcl::PointCloud<T>::Ptr Src,
+        double KRadius, int Neighbours, double Angle, double Curvature,
+        int MinClusterSize = 100, int MaxClusterSize = 25000)
+    {
+        auto pair = estimateNormalPairKr(Src, KRadius);
+
+        pcl::RegionGrowing<T, pcl::Normal> reg;
+        reg.setMinClusterSize(MinClusterSize);
+        reg.setMaxClusterSize(MaxClusterSize);
+        reg.setSearchMethod(pair.second);
+        reg.setNumberOfNeighbours(Neighbours);
+        reg.setInputCloud(Src);
+        //reg.setIndices(indices);
+        reg.setInputNormals(pair.first);
+        reg.setSmoothnessThreshold(Angle);
+        reg.setCurvatureThreshold(Curvature);
+
+        std::vector<pcl::PointIndices> clusters;
+        reg.extract(clusters);
+
+        return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentRegionGrowingRGB(const pcl::PointCloud<pcl::PointXYZRGB>::Ptr Src,
+        double Distance, double PointColor, double RegionColor, int MinClusterSize = 100, int MaxClusterSize = 25000)
+    {
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+        pcl::copyPointCloud(*Src, *cloud);
+        pcl::search::Search<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>());
+        pcl::RegionGrowingRGB<pcl::PointXYZRGB> reg;
+        reg.setInputCloud(cloud);
+        reg.setSearchMethod(tree);
+        reg.setDistanceThreshold(float(Distance));
+        reg.setPointColorThreshold(float(PointColor));
+        reg.setRegionColorThreshold(float(RegionColor));
+        reg.setMinClusterSize(MinClusterSize);
+        reg.setMaxClusterSize(MaxClusterSize);
+
+        std::vector<pcl::PointIndices> clusters;
+        reg.extract(clusters);
+
+        return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentConditionalEuclidean(const pcl::PointCloud<pcl::PointXYZI>::Ptr Src,
+        double KRadius, double ClusterRadius, double IntensityTolerance,
+        int MinClusterSize = 100, int MaxClusterSize = 25000)
+    {
+        pcl::search::KdTree<pcl::PointXYZI>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZI>());
+        // set up a Normal Estimation class and merge data in cloud_with_normals
+        pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloudWithNormals(new pcl::PointCloud<pcl::PointXYZINormal>);
+        pcl::copyPointCloud(*Src, *cloudWithNormals);
+        pcl::NormalEstimation<pcl::PointXYZI, pcl::PointXYZINormal> ne;
+        ne.setInputCloud(Src);
+        ne.setSearchMethod(tree);
+        ne.setRadiusSearch(KRadius);
+        ne.compute(*cloudWithNormals);
+        // set up a Conditional Euclidean Clustering class
+        pcl::ConditionalEuclideanClustering<pcl::PointXYZINormal> cec(true);
+        cec.setInputCloud(cloudWithNormals);
+        cec.setConditionFunction(
+            [=](const pcl::PointXYZINormal& PointA, const pcl::PointXYZINormal& PointB, float SquaredDistance) -> bool
+            {
+                if (std::abs(PointA.intensity - PointB.intensity) < IntensityTolerance)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            });
+        cec.setClusterTolerance(ClusterRadius);
+        cec.setMinClusterSize(MinClusterSize);
+        cec.setMaxClusterSize(MaxClusterSize);
+        std::vector<pcl::PointIndices> clusters;
+        cec.segment(clusters);
+
+        return clusters;
+    }
+
+    static std::vector<pcl::PointIndices> segmentEdgeDetection(const typename pcl::PointCloud<T>::Ptr Src,
+        double KRadius, int Neighbour, double Depth)
+    {
+        auto normal = estimateNormalKr(Src, KRadius);
+
+        pcl::OrganizedEdgeFromNormals<T, pcl::Normal, pcl::Label> oed;
+        oed.setInputNormals(normal);
+        oed.setInputCloud(Src);
+        oed.setEdgeType(oed.EDGELABEL_NAN_BOUNDARY | oed.EDGELABEL_OCCLUDING | oed.EDGELABEL_OCCLUDED |
+            oed.EDGELABEL_HIGH_CURVATURE | oed.EDGELABEL_RGB_CANNY);
+        oed.setDepthDisconThreshold(Depth);
+        oed.setMaxSearchNeighbors(Neighbour);
+
+        pcl::PointCloud<pcl::Label> labels;
+        std::vector<pcl::PointIndices> clusters;
+        oed.compute(labels, clusters);
+
+        return clusters;
+    }
+
+    static std::vector<int> segmentSAC(const typename pcl::PointCloud<T>::Ptr Src, int Model,
+        double DistanceThresh)
+    {
+        // create the segmentation object
+        pcl::SACSegmentation<T> seg;
+        // optional
+        seg.setOptimizeCoefficients(true);
+        // mandatory
+        // for model enum definition(like pcl::SACMODEL_PLANE), please refer to:
+        // https://pointclouds.org/documentation/group__sample__consensus.html
+        seg.setModelType(Model);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setDistanceThreshold(DistanceThresh);
+        seg.setInputCloud(Src);
+        pcl::ModelCoefficients::Ptr coeffs(new pcl::ModelCoefficients());
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        seg.segment(*inliers, *coeffs);
+
+        return inliers->indices;
+    }
+
+    static bool sampleConsensusModelCircle2D(const typename pcl::PointCloud<T>::Ptr Src,
+        double DistanceThresh, std::vector<int>& Inliers, std::vector<double>& Coeffs)
+    {
+        // created RandomSampleConsensus object and compute the appropriated model
+        typename pcl::SampleConsensusModelCircle2D<T>::Ptr
+            modelCircle(new pcl::SampleConsensusModelCircle2D<T>(Src));
+        pcl::RandomSampleConsensus<T> ransac(modelCircle, DistanceThresh);
+        if (ransac.computeModel())
+        {
+            ransac.getInliers(Inliers);
+#ifdef DEBUG
+            // copies all inliers of the model computed to another PointCloud
+            pcl::PointCloud<T>::Ptr inliers(new pcl::PointCloud<T>());
+            Inliers.reset(new pcl::PointCloud<T>());
+            pcl::copyPointCloud(*Src, Inliers, *inliers);
+#endif
+
+            Eigen::VectorXf coeffs;
+            ransac.getModelCoefficients(coeffs);
+            for (int i = 0; i < coeffs.size(); ++i)
+            {
+                Coeffs.push_back(coeffs[i]);
+            }
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    static bool sampleConsensusModelLine(const typename pcl::PointCloud<T>::Ptr Src,
+        double DistanceThresh, std::vector<int>& Inliers, std::vector<double>& Coeffs)
+    {
+        // created RandomSampleConsensus object and compute the appropriated model
+        typename pcl::SampleConsensusModelLine<T>::Ptr
+            modelLine(new pcl::SampleConsensusModelLine<T>(Src));
+        pcl::RandomSampleConsensus<T> ransac(modelLine, DistanceThresh);
+        if (ransac.computeModel())
+        {
+            ransac.getInliers(Inliers);
+
+            Eigen::VectorXf coeffs;
+            ransac.getModelCoefficients(coeffs);
+            for (int i = 0; i < coeffs.size(); ++i)
+            {
+                Coeffs.push_back(coeffs[i]);
+            }
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
     static void matrix2angle(Eigen::Matrix4f &result_trans, Eigen::Vector3f &result_angle)
@@ -664,7 +923,6 @@ public:
         *outcloud = *find_cloud;
 
     }
-
 };
 
 // 最小包围圆算法 
@@ -679,7 +937,8 @@ public:
         return -1;
     }
 
-    struct mypoint {
+    struct mypoint
+    {
         double x, y;
         mypoint() {}
         mypoint(double a, double b) : x(a), y(b) {}
@@ -687,7 +946,8 @@ public:
         {
             return mypoint(a.x - b.x, a.y - b.y);
         }
-        double norm() {
+        double norm()
+        {
             return sqrt(pow(x, 2) + pow(y, 2));
         }
     };
@@ -716,29 +976,29 @@ public:
         return cmp(dist(p, center) - radius) < 0;
     }
 
-    void min_circle_cover(std::vector<mypoint> a, int n, double & radius, mypoint & center)
+    void min_circle_cover(const std::vector<mypoint>& List, double& radius, mypoint& center)
     {
         radius = 0;
-        center = a[0];
-        for (int i = 1; i < n; i++) 
-        if (!point_in(a[i],radius,center)) 
+        center = List[0];
+        for (int i = 1; i < List.size(); i++) 
+        if (!point_in(List[i],radius,center)) 
         {
             radius = 0;
-            center = a[0];
-            for (int i = 1; i < n; i++) 
-            if (!point_in(a[i],radius,center)) 
+            center = List[0];
+            for (int i = 1; i < List.size(); i++) 
+            if (!point_in(List[i],radius,center)) 
             {
-                center = a[i], radius = 0;
+                center = List[i], radius = 0;
                 for (int j = 0; j < i; j++) 
-                if (!point_in(a[j],radius,center)) 
+                if (!point_in(List[j],radius,center)) 
                 {
-                    circle_center(a[i], a[j], center);
-                    radius = dist(a[j], center);
+                    circle_center(List[i], List[j], center);
+                    radius = dist(List[j], center);
                     for (int k = 0; k < j; k++) 
-                    if (!point_in(a[k],radius,center)) 
+                    if (!point_in(List[k],radius,center))
                     {
-                        circle_center(a[i], a[j], a[k], center);
-                        radius = dist(a[k], center);
+                        circle_center(List[i], List[j], List[k], center);
+                        radius = dist(List[k], center);
                     }
                 }
             }

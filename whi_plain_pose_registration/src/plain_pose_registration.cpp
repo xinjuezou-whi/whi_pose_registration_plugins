@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.02" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.02.1" << std::endl;
 	    std::cout << "Copyright © 2023-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -101,7 +101,8 @@ namespace pose_registration_plugins
             node_handle_->createTimer(updateFreq, std::bind(&PlainPoseRegistration::update, this, std::placeholders::_1)));
     }
 
-    void PlainPoseRegistration::computeVelocityCommands(const std::string& GoalId, geometry_msgs::Twist& CmdVel)
+    void PlainPoseRegistration::computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
+        geometry_msgs::Twist& CmdVel)
     {
         geometry_msgs::TransformStamped transBaselinkMap;
         {

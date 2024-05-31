@@ -33,7 +33,8 @@ namespace pose_registration_plugins
 
     public:
         void initialize() override;
-        void computeVelocityCommands(const std::string& GoalId, geometry_msgs::Twist& CmdVel) override;
+        void computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
+            geometry_msgs::Twist& CmdVel) override;
         void standby() override;
         int goalState() override;
 

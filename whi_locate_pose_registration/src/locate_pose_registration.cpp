@@ -26,7 +26,7 @@ namespace pose_registration_plugins
         : target_cloud_(new pcl::PointCloud<pcl::PointXYZ>()) ,BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.03" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.03.1" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -113,7 +113,8 @@ namespace pose_registration_plugins
 		    imuTopic, 10, std::bind(&LocatePoseRegistration::subCallbackImu, this, std::placeholders::_1)));
     }
 
-    void LocatePoseRegistration::computeVelocityCommands(const std::string& GoalId, geometry_msgs::Twist& CmdVel)
+    void LocatePoseRegistration::computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
+        geometry_msgs::Twist& CmdVel)
     {
         const std::lock_guard<std::mutex> lock(mtx_imu_);
         if (state_ == STA_ALIGN)

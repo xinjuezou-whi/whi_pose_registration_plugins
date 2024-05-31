@@ -182,9 +182,9 @@ namespace pose_registration_plugins
         {
             geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-            if (PoseUtilities::signOf(distance_horizon_) < 0 )
+            if (iszerorela_ )
             {
-                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - 0.5 * M_PI);
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI);
                 angletar_imu_ = angleyaw_imu_ - 0.5 * M_PI;
             }else
             {
@@ -256,9 +256,9 @@ namespace pose_registration_plugins
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_target_.position.x = 0.0;
             pose_target_.position.y = 0.0;
-            if (PoseUtilities::signOf(distance_horizon_) < 0 )
+            if (iszerorela_)
             {
-                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + 0.5 * M_PI); 
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI); 
                 angletar_imu_ = angleyaw_imu_ + 0.5 * M_PI;
             }
             else
@@ -562,7 +562,7 @@ namespace pose_registration_plugins
                     //根据当前位置和标靶特征位置，计算相对距离;distance_horizon_,distance_vertical_
                     {
                         distance_vertical_ = target_rela_pose_[1] + pose_feature_.position.y + transxy[0];      // this plus transxy[1] ,because forward
-                        distance_horizon_ = target_rela_pose_[0] + leftorright_ * transxy[1];      // this plus ,because to left
+                        distance_horizon_ = target_rela_pose_[0] + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
 
                         if(target_rela_pose_[0] < 0.001 && target_rela_pose_[1] < 0.001)
                         {

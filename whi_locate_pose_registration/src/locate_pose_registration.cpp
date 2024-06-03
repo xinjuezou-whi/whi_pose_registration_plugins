@@ -19,6 +19,8 @@ All text above must be included in any redistribution.
 #include <pluginlib/class_list_macros.h>
 #include <thread>
 #include <chrono>
+#include <yaml-cpp/yaml.h>
+#include <ros/package.h>
 
 namespace pose_registration_plugins
 {
@@ -35,7 +37,7 @@ namespace pose_registration_plugins
         /// params
         // common
         std::string laserScanTopic,imuTopic;
-        std::vector<double> feature,target;
+        std::vector<double> feature,target,feature_curpose;
         if (!node_handle_->getParam("pose_registration/LocatePose/feature_pose", feature))
         {
             feature.resize(3);
@@ -47,6 +49,19 @@ namespace pose_registration_plugins
             pose_feature_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(feature[2]));
             feature_angle_ = angles::from_degrees(feature[2]);
         }
+        if (!node_handle_->getParam("pose_registration/LocatePose/cur_pose", feature_curpose))
+        {
+            feature_curpose.resize(3);
+            feature_cur_pose_.position.x = 1e5;
+            feature_cur_pose_.position.y = 1e5;
+            feature_cur_pose_.position.z = 0;
+        }
+        else
+        {
+            feature_cur_pose_.position.x = feature_curpose[0];
+            feature_cur_pose_.position.y = feature_curpose[1];
+            feature_cur_pose_.position.z = feature_curpose[2];
+        }        
         ROS_INFO("pose_featureX= %f, pose_featureY= %f, featureAngle=%f ",pose_feature_.position.x,pose_feature_.position.y,feature_angle_);
         if (!node_handle_->getParam("pose_registration/LocatePose/target_rela_pose", target))
         {
@@ -65,6 +80,68 @@ namespace pose_registration_plugins
         ROS_INFO("targetX= %f, targetY= %f ,targetRelaX = %f, targetRelaY= %f ,targetRelaAngle = %f ",pose_arrive_.position.x,pose_arrive_.position.y ,target_rela_pose_[0],target_rela_pose_[1],target_rela_pose_[2]);
 
         node_handle_->param("pose_registration/LocatePose/leftorright", leftorright_, 1);
+        std::string model_cloud_file;
+        node_handle_->param("pose_registration/LocatePose/model_cloud", model_cloud_file, std::string("modelcloudfile.pcd"));
+        if(pcl::io::loadPCDFile<pcl::PointXYZ>(model_cloud_file.c_str(), *target_cloud_) == -1){
+            PCL_ERROR("Can not find the file model_cloud ");
+        }
+        ROS_INFO("Loaded : %d from the model_cloud file", target_cloud_->size());
+
+        std::string config_file;
+        //node_handle_->param("config_file", config_file);
+        std::string path = ros::package::getPath("whi_pose_registration");
+        config_file = path + "/config/pose_registration.yaml";
+        printf("configfile is %s \n",config_file.c_str());
+        YAML::Node config_node = YAML::LoadFile(config_file.c_str());
+        
+        YAML::Node featurenode = config_node["pose_registration"]["LocatePose"]["features"];
+        for (const auto &it : featurenode) 
+        {
+            FeatureConfig onefeature;
+            for (const auto &pair : it) 
+            {
+                //map_params[pair.first.as<std::string>()] = pair.second.as<std::string>();
+                if(pair.first.as<std::string>() == "name")
+                {
+                    onefeature.name = pair.second.as<std::string>();
+                }
+                if(pair.first.as<std::string>() == "cur_pose")
+                {
+                    for (const auto& item : pair.second)
+                    {
+                        onefeature.cur_pose.push_back(item.as<double>());
+                    }
+                }
+                if(pair.first.as<std::string>() == "feature_pose")
+                {
+                    for (const auto& item : pair.second)
+                    {
+                        onefeature.feature_pose.push_back(item.as<double>());
+                    }
+                }
+                if(pair.first.as<std::string>() == "target_rela_pose")
+                {
+                    for (const auto& item : pair.second)
+                    {
+                        onefeature.target_rela_pose.push_back(item.as<double>());
+                    }
+                }                    
+
+            }
+            features_config_.push_back(onefeature);
+
+        }
+        
+
+        for(auto oneiter = features_config_.begin(); oneiter!= features_config_.end(); oneiter++)
+        {
+            printf("onefeature: \n");
+            printf("name: %s ,cur_pose: [ %f, %f, %f  ]" , (*oneiter).name.c_str() , (*oneiter).cur_pose[0],(*oneiter).cur_pose[1],(*oneiter).cur_pose[2] );
+            printf("feature_pose: [%f, %f, %f]",(*oneiter).feature_pose[0],(*oneiter).feature_pose[1],(*oneiter).feature_pose[2]);
+            printf("target_rela_pose: [%f, %f, %f]",(*oneiter).target_rela_pose[0],(*oneiter).target_rela_pose[1],(*oneiter).target_rela_pose[2]);
+
+        }
+        
         node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
         node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);
         yaw_tolerance_ = angles::from_degrees(yaw_tolerance_);
@@ -76,13 +153,9 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/issetimu", issetimu_, false); 
         node_handle_->param("pose_registration/LocatePose/xyvel", xyvel_, 0.05);
         node_handle_->param("pose_registration/LocatePose/rotvel", rotvel_, 0.1);    
-        node_handle_->param("pose_registration/LocatePose/distthresh_horizon", distthresh_horizon_, 0.005);     
-        std::string model_cloud_file;
-        node_handle_->param("pose_registration/LocatePose/model_cloud", model_cloud_file, std::string("modelcloudfile.pcd"));
-        if(pcl::io::loadPCDFile<pcl::PointXYZ>(model_cloud_file.c_str(), *target_cloud_) == -1){
-            PCL_ERROR("Can not find the file model_cloud ");
-        }
-        ROS_INFO("Loaded : %d from the model_cloud file", target_cloud_->size());
+        node_handle_->param("pose_registration/LocatePose/distthresh_horizon", distthresh_horizon_, 0.005);   
+        node_handle_->param("pose_registration/LocatePose/curpose_thresh", curpose_thresh_, 0.5);     
+
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndtsample_coeffs", ndtsample_coeffs_))
         {
@@ -113,8 +186,7 @@ namespace pose_registration_plugins
 		    imuTopic, 10, std::bind(&LocatePoseRegistration::subCallbackImu, this, std::placeholders::_1)));
     }
 
-    void LocatePoseRegistration::computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
-        geometry_msgs::Twist& CmdVel)
+    void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
         const std::lock_guard<std::mutex> lock(mtx_imu_);
         if (state_ == STA_ALIGN)
@@ -424,11 +496,19 @@ namespace pose_registration_plugins
         }
     }
 
-    void LocatePoseRegistration::standby()
+    void LocatePoseRegistration::standby(const geometry_msgs::PoseStamped& PatternPose)
     {
-        prestate_ = STA_START;
-        state_ = STA_WAIT_SCAN;
-        ROS_INFO("in standby");
+        bool curposeright = checkcurpose();
+        if (curposeright)
+        {
+            prestate_ = STA_START;
+            state_ = STA_WAIT_SCAN;
+            ROS_INFO("in standby");
+        }else
+        {
+            state_ = STA_FAILED;
+            ROS_INFO("in standby , but curpose is wrong ,check config ");
+        }
     }
 
     int LocatePoseRegistration::goalState()
@@ -445,6 +525,23 @@ namespace pose_registration_plugins
         {
             return GS_PROCEEDING;
         }
+    }
+
+    bool LocatePoseRegistration::checkcurpose()
+    {
+        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+        geometry_msgs::Pose curpose;
+        curpose.position.x = transBaselinkMap.transform.translation.x;
+        curpose.position.y = transBaselinkMap.transform.translation.y;
+        double posedis = PoseUtilities::distance(curpose,feature_cur_pose_);
+        if(posedis > curpose_thresh_)
+        {
+            return false;
+        }else
+        {
+            return true;
+        }
+
     }
 
     void LocatePoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)

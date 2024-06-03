@@ -27,6 +27,15 @@ Changelog:
 
 namespace pose_registration_plugins
 {
+
+    struct FeatureConfig
+    {
+        std::string name;
+        std::vector<double> cur_pose;
+        std::vector<double> feature_pose;
+        std::vector<double> target_rela_pose;
+    };
+
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
     {
     public:
@@ -35,25 +44,28 @@ namespace pose_registration_plugins
 
     public:
         void initialize() override;
-        void computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
-            geometry_msgs::Twist& CmdVel) override;
-        void standby() override;
+        void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
+        void standby(const geometry_msgs::PoseStamped& PatternPose) override;
         int goalState() override;
 
     private:
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
+        bool checkcurpose();
 
     private:
         geometry_msgs::Pose pose_feature_;
         geometry_msgs::Pose pose_arrive_;
         geometry_msgs::Pose pose_standby_;
+        geometry_msgs::Pose feature_cur_pose_;
+        double curpose_thresh_;
         double tf_listener_frequency_{ 20 };
         std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;
         geometry_msgs::Pose pose_target_;
         std::vector<double> target_rela_pose_ ;
         int leftorright_{ 1 };
+        std::vector<FeatureConfig> features_config_;
         double xy_tolerance_{ 0.02 };
         double yaw_tolerance_{ 0.087 };
         double feature_angle_;

@@ -101,8 +101,7 @@ namespace pose_registration_plugins
             node_handle_->createTimer(updateFreq, std::bind(&PlainPoseRegistration::update, this, std::placeholders::_1)));
     }
 
-    void PlainPoseRegistration::computeVelocityCommands(const geometry_msgs::PoseStamped& PatternPose,
-        geometry_msgs::Twist& CmdVel)
+    void PlainPoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
         geometry_msgs::TransformStamped transBaselinkMap;
         {
@@ -210,7 +209,7 @@ namespace pose_registration_plugins
         }
     }
 
-    void PlainPoseRegistration::standby()
+    void PlainPoseRegistration::standby(const geometry_msgs::PoseStamped& PatternPose)
     {
         state_ = STA_ALIGNED;
     }

@@ -31,6 +31,7 @@ namespace pose_registration_plugins
     struct FeatureConfig
     {
         std::string name;
+        int leftright = 1;
         std::vector<double> cur_pose;
         std::vector<double> feature_pose;
         std::vector<double> target_rela_pose;
@@ -65,6 +66,7 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_target_;
         std::vector<double> target_rela_pose_ ;
         int leftorright_{ 1 };
+        std::string model_cloud_path_;
         std::vector<FeatureConfig> features_config_;
         double xy_tolerance_{ 0.02 };
         double yaw_tolerance_{ 0.087 };
@@ -81,6 +83,7 @@ namespace pose_registration_plugins
         std::string segment_type_{ "region_growing" };
         std::string mapframe_;
         // cut-min
+        int mincut_size_{ 300 };
         geometry_msgs::Point center_;
         double radius_{ 0.1 };
         double sigma_{ 0.25 };

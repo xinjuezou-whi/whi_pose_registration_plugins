@@ -37,58 +37,8 @@ namespace pose_registration_plugins
         /// params
         // common
         std::string laserScanTopic,imuTopic;
-        std::vector<double> feature,target,feature_curpose;
-        if (!node_handle_->getParam("pose_registration/LocatePose/feature_pose", feature))
-        {
-            feature.resize(3);
-        }
-        else
-        {
-            pose_feature_.position.x = feature[0];
-            pose_feature_.position.y = feature[1];
-            pose_feature_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angles::from_degrees(feature[2]));
-            feature_angle_ = angles::from_degrees(feature[2]);
-        }
-        if (!node_handle_->getParam("pose_registration/LocatePose/cur_pose", feature_curpose))
-        {
-            feature_curpose.resize(3);
-            feature_cur_pose_.position.x = 1e5;
-            feature_cur_pose_.position.y = 1e5;
-            feature_cur_pose_.position.z = 0;
-        }
-        else
-        {
-            feature_cur_pose_.position.x = feature_curpose[0];
-            feature_cur_pose_.position.y = feature_curpose[1];
-            feature_cur_pose_.position.z = feature_curpose[2];
-        }        
-        ROS_INFO("pose_featureX= %f, pose_featureY= %f, featureAngle=%f ",pose_feature_.position.x,pose_feature_.position.y,feature_angle_);
-        if (!node_handle_->getParam("pose_registration/LocatePose/target_rela_pose", target))
-        {
-            target.resize(3);
-        }
-        else
-        {
-            target_rela_pose_.resize(3);
-            pose_arrive_.position.x = pose_feature_.position.x + target[0];
-            pose_arrive_.position.y = pose_feature_.position.y + target[1];
-            pose_arrive_.orientation = pose_feature_.orientation;
-            target_rela_pose_[0] = target[0];
-            target_rela_pose_[1] = target[1];
-            target_rela_pose_[2] = target[2];
-        }
-        ROS_INFO("targetX= %f, targetY= %f ,targetRelaX = %f, targetRelaY= %f ,targetRelaAngle = %f ",pose_arrive_.position.x,pose_arrive_.position.y ,target_rela_pose_[0],target_rela_pose_[1],target_rela_pose_[2]);
-
-        node_handle_->param("pose_registration/LocatePose/leftorright", leftorright_, 1);
-        std::string model_cloud_file;
-        node_handle_->param("pose_registration/LocatePose/model_cloud", model_cloud_file, std::string("modelcloudfile.pcd"));
-        if(pcl::io::loadPCDFile<pcl::PointXYZ>(model_cloud_file.c_str(), *target_cloud_) == -1){
-            PCL_ERROR("Can not find the file model_cloud ");
-        }
-        ROS_INFO("Loaded : %d from the model_cloud file", target_cloud_->size());
-
+        node_handle_->param("pose_registration/LocatePose/model_cloud_path", model_cloud_path_, std::string("modelcloudpath"));
         std::string config_file;
-        //node_handle_->param("config_file", config_file);
         std::string path = ros::package::getPath("whi_pose_registration");
         config_file = path + "/config/pose_registration.yaml";
         printf("configfile is %s \n",config_file.c_str());
@@ -100,26 +50,29 @@ namespace pose_registration_plugins
             FeatureConfig onefeature;
             for (const auto &pair : it) 
             {
-                //map_params[pair.first.as<std::string>()] = pair.second.as<std::string>();
-                if(pair.first.as<std::string>() == "name")
+                if (pair.first.as<std::string>() == "name")
                 {
                     onefeature.name = pair.second.as<std::string>();
                 }
-                if(pair.first.as<std::string>() == "cur_pose")
+                if (pair.first.as<std::string>() == "leftright")
+                {
+                    onefeature.leftright = pair.second.as<int>();
+                }                
+                if (pair.first.as<std::string>() == "cur_pose")
                 {
                     for (const auto& item : pair.second)
                     {
                         onefeature.cur_pose.push_back(item.as<double>());
                     }
                 }
-                if(pair.first.as<std::string>() == "feature_pose")
+                if (pair.first.as<std::string>() == "feature_pose")
                 {
                     for (const auto& item : pair.second)
                     {
                         onefeature.feature_pose.push_back(item.as<double>());
                     }
                 }
-                if(pair.first.as<std::string>() == "target_rela_pose")
+                if (pair.first.as<std::string>() == "target_rela_pose")
                 {
                     for (const auto& item : pair.second)
                     {
@@ -133,7 +86,7 @@ namespace pose_registration_plugins
         }
         
 
-        for(auto oneiter = features_config_.begin(); oneiter!= features_config_.end(); oneiter++)
+        for (auto oneiter = features_config_.begin(); oneiter!= features_config_.end(); oneiter++)
         {
             printf("onefeature: \n");
             printf("name: %s ,cur_pose: [ %f, %f, %f  ]" , (*oneiter).name.c_str() , (*oneiter).cur_pose[0],(*oneiter).cur_pose[1],(*oneiter).cur_pose[2] );
@@ -164,6 +117,7 @@ namespace pose_registration_plugins
                 ndtsample_coeffs_.push_back(0.005);
             }
         }        
+        node_handle_->param("pose_registration/LocatePose/mincut_size", mincut_size_, 300);
         node_handle_->param("pose_registration/LocatePose/segment_type", segment_type_, std::string("region_growing"));
         node_handle_->param("pose_registration/LocatePose/radius", radius_, 0.1);
         node_handle_->param("pose_registration/LocatePose/sigma", sigma_, 0.25);
@@ -174,6 +128,8 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/seg_scale2", seg_scale2_, 1.0);
         node_handle_->param("pose_registration/LocatePose/seg_threshold", seg_threshold_, 0.2);
         node_handle_->param("pose_registration/LocatePose/seg_radius", seg_radius_, 5.0);
+
+        node_handle_->param("pose_registration/LocatePose/debug_count", debug_count_, 0);
         
         node_handle_->param("pose_registration/LocatePose/feature_segment_distance_thresh",
             feature_segment_distance_thresh_, 0.04);
@@ -533,12 +489,53 @@ namespace pose_registration_plugins
         geometry_msgs::Pose curpose;
         curpose.position.x = transBaselinkMap.transform.translation.x;
         curpose.position.y = transBaselinkMap.transform.translation.y;
-        double posedis = PoseUtilities::distance(curpose,feature_cur_pose_);
-        if(posedis > curpose_thresh_)
+
+        double mindist = 1e8;
+        FeatureConfig getfeature;
+        for (auto oneiter = features_config_.begin();oneiter != features_config_.end(); oneiter++)
+        {   
+            geometry_msgs::Pose fea_cur_pose;
+            fea_cur_pose.position.x = (*oneiter).cur_pose[0];
+            fea_cur_pose.position.y = (*oneiter).cur_pose[1];
+            double posedis = PoseUtilities::distance(curpose,fea_cur_pose);
+            if (posedis < mindist)
+            {
+                mindist = posedis;
+                getfeature = *oneiter;
+            }
+
+        }
+
+        ROS_INFO("getfeature ,name is %s" , getfeature.name.c_str());
+        geometry_msgs::Pose getfea_cur_pose;
+        getfea_cur_pose.position.x = getfeature.cur_pose[0];
+        getfea_cur_pose.position.y = getfeature.cur_pose[1];
+        double posedis = PoseUtilities::distance(curpose,getfea_cur_pose);
+        ROS_INFO("curpose :[%f, %f], pose dis is %f" ,curpose.position.x,curpose.position.y, posedis);
+        if (posedis > curpose_thresh_)
         {
             return false;
         }else
         {
+            pose_feature_.position.x = getfeature.feature_pose[0];
+            pose_feature_.position.y = getfeature.feature_pose[1];
+            target_rela_pose_.resize(3);
+            target_rela_pose_[0] = getfeature.target_rela_pose[0];
+            target_rela_pose_[1] = getfeature.target_rela_pose[1];
+            target_rela_pose_[2] = getfeature.target_rela_pose[2];
+            leftorright_ = getfeature.leftright;
+
+            std::string model_cloud_file;
+            model_cloud_file = model_cloud_path_ + "/" + getfeature.name + ".pcd";
+            target_cloud_->points.clear();
+            if (pcl::io::loadPCDFile<pcl::PointXYZ>(model_cloud_file.c_str(), *target_cloud_) == -1)
+            {
+                PCL_ERROR("Can not find the file model_cloud ");
+                return false;
+            }
+            ROS_INFO("Loaded : %d from the model_cloud file", target_cloud_->size());
+
+
             return true;
         }
 
@@ -556,8 +553,9 @@ namespace pose_registration_plugins
             ROS_INFO("Loaded : %d from the laserscan" , pclCloud->size());
             pcl::PointCloud<pcl::PointXYZ>::Ptr outcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
             //segment don
+            ROS_INFO("start segment_don");
             PclUtilities<pcl::PointXYZ>::segment_don(pclCloud,target_cloud_,outcloud,seg_scale1_,seg_scale2_,seg_threshold_,seg_radius_,ndtsample_coeffs_,ndtmaxiter_);
-
+            ROS_INFO("finishi segment_don");
             //---------------------- 求最小包围圆 ----------------
 
             std::vector<mypoint> pvec;
@@ -575,7 +573,7 @@ namespace pose_registration_plugins
             ROS_INFO("radius : %.10lf \n  center.x: %.10lf center.y: %.10lf ",minradius,center.x, center.y);
             minradius = minradius + 0.080 ; 
             //--------------------- 在原点云上 mincut ------
-
+            ROS_INFO("start segmentMinCut");
             std::vector<pcl::PointIndices> minclusterIndices;
             pcl::PointXYZ minpointCenter;
             minpointCenter.x = center.x;
@@ -598,11 +596,12 @@ namespace pose_registration_plugins
                 PclUtilities<pcl::PointXYZ>::extractTo(pclCloud, cluster, cloudFeature);
                 ROS_INFO("extractTo cluster indices = %d , cloudFeature->size() =%d " , ci,cloudFeature->size());
 
-                if (!cloudFeature->empty() && cloudFeature->size() < 300)
+                if (!cloudFeature->empty() && cloudFeature->size() < mincut_size_)
                 {
                     *minoutcloud = *cloudFeature;
                 }
             }
+            ROS_INFO("finish segmentMinCut, get outcloud");
             //---------------------
             
             Eigen::Vector3f registAngles;
@@ -614,8 +613,11 @@ namespace pose_registration_plugins
             
             pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
             pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
-            static PclVisualize<pcl::PointXYZ> viewer;
-            viewer.viewCloud02(minoutcloud,"cur_features" , transcloud, "debug_features", target_cloud_,"target_features");
+            if (debug_count_ > 0)
+            {
+                static PclVisualize<pcl::PointXYZ> viewer;
+                viewer.viewCloud02(minoutcloud,"cur_features" , transcloud, "debug_features", target_cloud_,"target_features");
+            }
             //ROS_INFO(" outmatrix: ");
             //std::cout << outmatrix << std::endl;
             ROS_INFO("after segment, start registration ......");
@@ -626,7 +628,7 @@ namespace pose_registration_plugins
                 std::string outfile;
                 outfile = "/home/nvidia/catkin_workspace/testgetseg.pcd";
                 pcl::io::savePCDFileASCII (outfile, *minoutcloud);
-                state_ = STA_DONE;
+                //state_ = STA_DONE;
                 if (debug_count_ == 1)
                 {
                     return ;

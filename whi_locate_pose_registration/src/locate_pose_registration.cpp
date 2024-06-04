@@ -39,12 +39,10 @@ namespace pose_registration_plugins
         std::string laserScanTopic,imuTopic;
         node_handle_->param("pose_registration/LocatePose/model_cloud_path", model_cloud_path_, std::string("modelcloudpath"));
         std::string config_file;
-        std::string path = ros::package::getPath("whi_pose_registration");
-        config_file = path + "/config/pose_registration.yaml";
+        node_handle_->param("pose_registration/LocatePose/features_file", config_file, std::string("modelcloudpath"));
         printf("configfile is %s \n",config_file.c_str());
         YAML::Node config_node = YAML::LoadFile(config_file.c_str());
-        
-        YAML::Node featurenode = config_node["pose_registration"]["LocatePose"]["features"];
+        YAML::Node featurenode = config_node;
         for (const auto &it : featurenode) 
         {
             FeatureConfig onefeature;
@@ -53,11 +51,7 @@ namespace pose_registration_plugins
                 if (pair.first.as<std::string>() == "name")
                 {
                     onefeature.name = pair.second.as<std::string>();
-                }
-                if (pair.first.as<std::string>() == "leftright")
-                {
-                    onefeature.leftright = pair.second.as<int>();
-                }                
+                }          
                 if (pair.first.as<std::string>() == "cur_pose")
                 {
                     for (const auto& item : pair.second)
@@ -72,7 +66,7 @@ namespace pose_registration_plugins
                         onefeature.feature_pose.push_back(item.as<double>());
                     }
                 }
-                if (pair.first.as<std::string>() == "target_rela_pose")
+                if (pair.first.as<std::string>() == "target_relative_pose")
                 {
                     for (const auto& item : pair.second)
                     {
@@ -523,7 +517,13 @@ namespace pose_registration_plugins
             target_rela_pose_[0] = getfeature.target_rela_pose[0];
             target_rela_pose_[1] = getfeature.target_rela_pose[1];
             target_rela_pose_[2] = getfeature.target_rela_pose[2];
-            leftorright_ = getfeature.leftright;
+            if(PoseUtilities::signOf(target_rela_pose_[0]) == 0 )
+            {
+                leftorright_ = 1;
+            }else
+            {
+                leftorright_ = PoseUtilities::signOf(target_rela_pose_[0]);
+            }
 
             std::string model_cloud_file;
             model_cloud_file = model_cloud_path_ + "/" + getfeature.name + ".pcd";
@@ -661,7 +661,7 @@ namespace pose_registration_plugins
                     //根据当前位置和标靶特征位置，计算相对距离;distance_horizon_,distance_vertical_
                     {
                         distance_vertical_ = target_rela_pose_[1] + pose_feature_.position.y + transxy[0];      // this plus transxy[1] ,because forward
-                        distance_horizon_ = target_rela_pose_[0] + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
+                        distance_horizon_ = fabs(target_rela_pose_[0]) + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
 
                         if(target_rela_pose_[0] < 0.001 && target_rela_pose_[1] < 0.001)
                         {

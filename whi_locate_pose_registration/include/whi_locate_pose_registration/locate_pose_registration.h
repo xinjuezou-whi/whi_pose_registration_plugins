@@ -31,7 +31,6 @@ namespace pose_registration_plugins
     struct FeatureConfig
     {
         std::string name;
-        int leftright = 1;
         std::vector<double> cur_pose;
         std::vector<double> feature_pose;
         std::vector<double> target_rela_pose;

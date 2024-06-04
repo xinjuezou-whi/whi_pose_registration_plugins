@@ -663,7 +663,7 @@ namespace pose_registration_plugins
                         distance_vertical_ = target_rela_pose_[1] + pose_feature_.position.y + transxy[0];      // this plus transxy[1] ,because forward
                         distance_horizon_ = fabs(target_rela_pose_[0]) + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
 
-                        if(target_rela_pose_[0] < 0.001 && target_rela_pose_[1] < 0.001)
+                        if(fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
                         {
                             distance_vertical_ = transxy[0];
                             distance_horizon_ = transxy[1];

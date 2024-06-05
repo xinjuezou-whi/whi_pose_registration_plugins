@@ -638,6 +638,16 @@ namespace pose_registration_plugins
             if (getRegist)
             {
                 geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                
+                
+                if(registAngles[2] > 0.5 * M_PI)
+                {
+                    failedFind = true;
+                    state_ = STA_FAILED;
+                    ROS_INFO("registangle > 0.5 pi , it is wrong ,registration fail ");
+                    return ;
+                }
+                
                 // 转换矩阵正常的情况：
                 if (fabs(registAngles[0]) < 0.02 && fabs(registAngles[1]) == 0 )
                 {

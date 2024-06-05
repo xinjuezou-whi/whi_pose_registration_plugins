@@ -552,10 +552,42 @@ namespace pose_registration_plugins
             auto pclCloud = PclUtilities<pcl::PointXYZ>::fromMsgLaserScan(*Laser);
             ROS_INFO("Loaded : %d from the laserscan" , pclCloud->size());
             pcl::PointCloud<pcl::PointXYZ>::Ptr outcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
+            std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> outcloudvec;
             //segment don
             ROS_INFO("start segment_don");
-            PclUtilities<pcl::PointXYZ>::segment_don(pclCloud,target_cloud_,outcloud,seg_scale1_,seg_scale2_,seg_threshold_,seg_radius_,ndtsample_coeffs_,ndtmaxiter_);
+            PclUtilities<pcl::PointXYZ>::segment_don(pclCloud,target_cloud_,outcloudvec,seg_scale1_,seg_scale2_,seg_threshold_,seg_radius_,ndtsample_coeffs_,ndtmaxiter_);
             ROS_INFO("finishi segment_don");
+            
+            //--------------------从几个可能的特征找出最近的-----------
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double center_dist_min = 1000;
+            for (auto oneiter = outcloudvec.begin(); oneiter != outcloudvec.end(); oneiter++)
+            {
+                std::vector<mypoint> pvec;
+                for (int i = 0; i < (*oneiter)->points.size(); ++i)
+                {
+                    mypoint onepoint;
+                    onepoint.x = (*oneiter)->points[i].x;
+                    onepoint.y = (*oneiter)->points[i].y;
+                    pvec.push_back(onepoint);
+                }
+                double minradius;
+                mypoint center;
+                min_circle_cover(pvec, minradius, center);
+                geometry_msgs::Pose centerpoint;
+                centerpoint.position.x = center.x;
+                centerpoint.position.y = center.y;
+                double center_dist = PoseUtilities::distance(curpose,centerpoint);
+                if(center_dist < center_dist_min)
+                {
+                    center_dist_min = center_dist;
+                    *outcloud = **oneiter ;
+                }
+            }
+            
             //---------------------- 求最小包围圆 ----------------
 
             std::vector<mypoint> pvec;
@@ -628,9 +660,12 @@ namespace pose_registration_plugins
                 std::string outfile;
                 outfile = "/home/nvidia/catkin_workspace/testgetseg.pcd";
                 pcl::io::savePCDFileASCII (outfile, *minoutcloud);
+                outfile = "/home/nvidia/catkin_workspace/testgetall.pcd";
+                pcl::io::savePCDFileASCII (outfile, *pclCloud);                
                 //state_ = STA_DONE;
                 if (debug_count_ == 1)
                 {
+                    state_ = STA_DONE;
                     return ;
                 }
             }

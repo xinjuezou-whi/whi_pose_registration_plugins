@@ -55,7 +55,7 @@ Changelog:
 #include <pcl/registration/ndt.h> // NDT配准算法
 #include <pcl/segmentation/impl/extract_clusters.hpp>
 #include <pcl/features/don.h>
-
+#include "pcl_visualize.h"
 typedef pcl::PointCloud<pcl::PointXYZ> pointcloud;
 typedef pcl::PointCloud<pcl::Normal> pointnormal;
 typedef pcl::PointCloud<pcl::FPFHSignature33> fpfhFeature;
@@ -612,7 +612,7 @@ public:
         }        
     }
 
-    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,pcl::PointCloud<pcl::PointXYZ>::Ptr& modelcloud,pcl::PointCloud<pcl::PointXYZ>::Ptr& outcloud ,double scale1,double scale2 ,double threshold,double segradius ,std::vector<float>& samplecoeff,int maxiter)
+    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,pcl::PointCloud<pcl::PointXYZ>::Ptr& modelcloud, std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& outcloudvec ,double scale1,double scale2 ,double threshold,double segradius ,std::vector<float>& samplecoeff,int maxiter)
     {
         int VISUAL = 1, SAVE = 0;//0表示不显示任何结果，1表示显示每一步的输出，2只显示最终结果
 
@@ -850,10 +850,12 @@ public:
         pcl::PointCloud<pcl::PointXYZ>::Ptr find_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::PointCloud <pcl::PointXYZ>::Ptr tmp_xyz(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::copyPointCloud<pcl::PointNormal, pcl::PointXYZ>(*doncloud, *tmp_xyz);
+      
         {
             printf("tmp_xyz .point.size = %d \n" , tmp_xyz->points.size());
             int ci = 0;
             double minscore = 1.0;
+
             for (const auto& cluster : cluster_indices)
             {
                 ci++;
@@ -876,13 +878,19 @@ public:
                 ROS_INFO("regist_sacia_ndt in segment find cloud, ci = %d",ci);
                 if (score < minscore)
                 {
-                    minscore = score;
-                    *find_cloud = *cloudFeatures;
+                    //minscore = score;
+                    //*find_cloud = *cloudFeatures;
+                    //ROS_INFO("find cloud, ci=%d ",ci);
+                }
+                double score_thres = 3e-4;
+                if (score < score_thres)
+                {
+                    outcloudvec.push_back(cloudFeatures);
                     ROS_INFO("find cloud, ci=%d ",ci);
                 }
 
             }
-            *outcloud = *find_cloud;
+            //*outcloud = *find_cloud;
         }
         
     }

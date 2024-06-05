@@ -78,6 +78,10 @@ private:
         {
             viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
             viewer_->setBackgroundColor(0.0, 0.0, 0.0);
+        }else
+        {
+            viewer_->removeAllPointClouds();
+            viewer_->removeAllShapes();
         }
 
         if (viewer_->contains(CloudID))

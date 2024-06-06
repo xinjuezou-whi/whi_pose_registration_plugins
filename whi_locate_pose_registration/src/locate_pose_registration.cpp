@@ -559,10 +559,9 @@ namespace pose_registration_plugins
             ROS_INFO("finishi segment_don");
             
             //--------------------从几个可能的特征找出最近的-----------
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            geometry_msgs::Pose curpose;
-            curpose.position.x = transBaselinkMap.transform.translation.x;
-            curpose.position.y = transBaselinkMap.transform.translation.y;
+            geometry_msgs::Pose originpose;
+            originpose.position.x = 0;
+            originpose.position.y = 0;
             double center_dist_min = 1000;
             for (auto oneiter = outcloudvec.begin(); oneiter != outcloudvec.end(); oneiter++)
             {
@@ -580,7 +579,7 @@ namespace pose_registration_plugins
                 geometry_msgs::Pose centerpoint;
                 centerpoint.position.x = center.x;
                 centerpoint.position.y = center.y;
-                double center_dist = PoseUtilities::distance(curpose,centerpoint);
+                double center_dist = PoseUtilities::distance(originpose,centerpoint);
                 if(center_dist < center_dist_min)
                 {
                     center_dist_min = center_dist;

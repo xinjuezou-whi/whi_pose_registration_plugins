@@ -97,20 +97,21 @@ namespace pose_registration_plugins
             laser_pose_.resize(6);
         }
         ROS_INFO("laser_pose , x: %f,y: %f,z: %f,roll: %f,pitch: %f,yaw: %f",laser_pose_[0],laser_pose_[1],laser_pose_[2],laser_pose_[3],laser_pose_[4],laser_pose_[5]);
+        node_handle_->param("pose_registration/LocatePose/imu_frame", imu_frame_, std::string("imu"));        
         node_handle_->param("pose_registration/LocatePose/laser_frame", laser_frame_, std::string("laser"));        
         node_handle_->param("pose_registration/LocatePose/tf_listener_frequency", tf_listener_frequency_, 20.0);
         node_handle_->param("pose_registration/LocatePose/laser_scan_topic", laserScanTopic, std::string("scan"));
         node_handle_->param("pose_registration/LocatePose/base_link_frame", base_link_frame_, std::string("base_link"));
-        node_handle_->param("pose_registration/LocatePose/mapframe", mapframe_, std::string("map"));
+        node_handle_->param("pose_registration/LocatePose/map_frame", mapframe_, std::string("map"));
         node_handle_->param("pose_registration/LocatePose/imu_topic", imuTopic, std::string("imu")); //issetimu
-        node_handle_->param("pose_registration/LocatePose/issetimu", issetimu_, false); 
+        node_handle_->param("pose_registration/LocatePose/using_imu", issetimu_, false); 
         node_handle_->param("pose_registration/LocatePose/xyvel", xyvel_, 0.05);
         node_handle_->param("pose_registration/LocatePose/rotvel", rotvel_, 0.1);    
-        node_handle_->param("pose_registration/LocatePose/distthresh_horizon", distthresh_horizon_, 0.005);   
-        node_handle_->param("pose_registration/LocatePose/curpose_thresh", curpose_thresh_, 0.5);     
+        node_handle_->param("pose_registration/LocatePose/horizon_aligned_thresh", distthresh_horizon_, 0.005);   
+        node_handle_->param("pose_registration/LocatePose/pattern_met_distance", curpose_thresh_, 0.5);     
 
 
-        if (!node_handle_->getParam("pose_registration/LocatePose/ndtsample_coeffs", ndtsample_coeffs_))
+        if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
             for (int i = 0; i < 3; ++i)
             {
@@ -118,14 +119,13 @@ namespace pose_registration_plugins
             }
         }        
         node_handle_->param("pose_registration/LocatePose/mincut_size", mincut_size_, 300);
-        node_handle_->param("pose_registration/LocatePose/segment_type", segment_type_, std::string("region_growing"));
         node_handle_->param("pose_registration/LocatePose/radius", radius_, 0.1);
         node_handle_->param("pose_registration/LocatePose/sigma", sigma_, 0.25);
         node_handle_->param("pose_registration/LocatePose/weight", weight_, 0.8);
         node_handle_->param("pose_registration/LocatePose/cut_min_neighbour", cut_min_neighbour_, 5);
 
-        node_handle_->param("pose_registration/LocatePose/seg_scale1", seg_scale1_, 3.0);
-        node_handle_->param("pose_registration/LocatePose/seg_scale2", seg_scale2_, 1.0);
+        node_handle_->param("pose_registration/LocatePose/seg_normal_min_scale", seg_scale1_, 3.0);
+        node_handle_->param("pose_registration/LocatePose/seg_normal_max_scale", seg_scale2_, 1.0);
         node_handle_->param("pose_registration/LocatePose/seg_threshold", seg_threshold_, 0.2);
         node_handle_->param("pose_registration/LocatePose/seg_radius", seg_radius_, 5.0);
 
@@ -135,7 +135,7 @@ namespace pose_registration_plugins
             feature_segment_distance_thresh_, 0.04);
         node_handle_->param("pose_registration/LocatePose/feature_min_size", feature_min_size_, 10);
         node_handle_->param("pose_registration/LocatePose/feature_max_size", feature_max_size_, 200);
-        node_handle_->param("pose_registration/LocatePose/ndtmaxiter", ndtmaxiter_, 5000);
+        node_handle_->param("pose_registration/LocatePose/ndt_maxiter", ndtmaxiter_, 5000);
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
@@ -213,7 +213,7 @@ namespace pose_registration_plugins
             if (iszerorela_ )
             {
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI);
-                angletar_imu_ = angleyaw_imu_ - 0.5 * M_PI;
+                angletar_imu_ = angleyaw_imu_ + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
             }else
             {
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + leftorright_ * 0.5 * M_PI);
@@ -287,7 +287,7 @@ namespace pose_registration_plugins
             if (iszerorela_)
             {
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI); 
-                angletar_imu_ = angleyaw_imu_ + 0.5 * M_PI;
+                angletar_imu_ = angleyaw_imu_ - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
             }
             else
             {
@@ -816,7 +816,7 @@ namespace pose_registration_plugins
             Imudata->orientation.w);
         angleyaw_imu_ = PoseUtilities::toEuler(quaternion)[2];
         //ROS_INFO("angleyaw_imu =%f ",angleyaw_imu_);
-        auto tfImu = listenTf(base_link_frame_ ,"imu", ros::Time(0));
+        auto tfImu = listenTf(base_link_frame_, imu_frame_, ros::Time(0));
         imu_delta_ = atan(tfImu.transform.translation.y / tfImu.transform.translation.x);
     }
 

@@ -81,6 +81,8 @@ namespace pose_registration_plugins
         int ndtmaxiter_;
         std::string segment_type_{ "region_growing" };
         std::string mapframe_;
+        std::string laser_frame_;
+        std::vector<double> laser_pose_;
         // cut-min
         int mincut_size_{ 300 };
         geometry_msgs::Point center_;

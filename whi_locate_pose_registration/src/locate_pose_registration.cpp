@@ -92,6 +92,12 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
         node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);
         yaw_tolerance_ = angles::from_degrees(yaw_tolerance_);
+        if (!node_handle_->getParam("pose_registration/LocatePose/laser_pose", laser_pose_))
+        {
+            laser_pose_.resize(6);
+        }
+        ROS_INFO("laser_pose , x: %f,y: %f,z: %f,roll: %f,pitch: %f,yaw: %f",laser_pose_[0],laser_pose_[1],laser_pose_[2],laser_pose_[3],laser_pose_[4],laser_pose_[5]);
+        node_handle_->param("pose_registration/LocatePose/laser_frame", laser_frame_, std::string("laser"));        
         node_handle_->param("pose_registration/LocatePose/tf_listener_frequency", tf_listener_frequency_, 20.0);
         node_handle_->param("pose_registration/LocatePose/laser_scan_topic", laserScanTopic, std::string("scan"));
         node_handle_->param("pose_registration/LocatePose/base_link_frame", base_link_frame_, std::string("base_link"));
@@ -551,13 +557,55 @@ namespace pose_registration_plugins
             /// convert to pcl cloud
             auto pclCloud = PclUtilities<pcl::PointXYZ>::fromMsgLaserScan(*Laser);
             ROS_INFO("Loaded : %d from the laserscan" , pclCloud->size());
+            // transform laser 
+            
+            geometry_msgs::TransformStamped lasertransform;
+            lasertransform.header.frame_id = laser_frame_;
+            lasertransform.child_frame_id = laser_frame_;
+            lasertransform.header.stamp = ros::Time::now();
+        
+            //
+            lasertransform.transform.translation.x = laser_pose_[0];
+            lasertransform.transform.translation.y = laser_pose_[1];
+            lasertransform.transform.translation.z = laser_pose_[2];
+            tf2::Quaternion q;
+            q.setRPY(laser_pose_[3]*M_PI/180, laser_pose_[4]*M_PI/180, laser_pose_[5]*M_PI/180);  
+            lasertransform.transform.rotation.x = q.x();
+            lasertransform.transform.rotation.y = q.y();
+            lasertransform.transform.rotation.z = q.z();
+            lasertransform.transform.rotation.w = q.w(); 
+                  
+            
+            for (int i= 0; i < pclCloud->points.size(); i++)
+            {
+                geometry_msgs::Pose pointpose,aftertrans_pose;
+                pointpose.position.x = pclCloud->points[i].x;
+                pointpose.position.y = pclCloud->points[i].y;
+                pointpose.position.z = pclCloud->points[i].z;
+                pointpose.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                aftertrans_pose = PoseUtilities::applyTransform(pointpose, lasertransform);
+                pclCloud->points[i].x = aftertrans_pose.position.x;
+                pclCloud->points[i].y = aftertrans_pose.position.y;
+                pclCloud->points[i].z = aftertrans_pose.position.z;
+            }
+            
+
             pcl::PointCloud<pcl::PointXYZ>::Ptr outcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
             std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> outcloudvec;
             //segment don
             ROS_INFO("start segment_don");
             PclUtilities<pcl::PointXYZ>::segment_don(pclCloud,target_cloud_,outcloudvec,seg_scale1_,seg_scale2_,seg_threshold_,seg_radius_,ndtsample_coeffs_,ndtmaxiter_);
             ROS_INFO("finishi segment_don");
-            
+            if(outcloudvec.size() == 0)
+            {
+                state_ = STA_DONE;
+                std::string outfile;
+                outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetall.pcd";
+                pcl::io::savePCDFileASCII (outfile, *pclCloud);                 
+                ROS_INFO(" segment_don , get none features , check config or condition");
+                return ;
+            }
+
             //--------------------从几个可能的特征找出最近的-----------
             geometry_msgs::Pose originpose;
             originpose.position.x = 0;
@@ -657,10 +705,10 @@ namespace pose_registration_plugins
             {
                 ROS_INFO("debug_count_ == 1 or 3 ,outfile");
                 std::string outfile;
-                outfile = "/home/nvidia/catkin_workspace/testgetseg.pcd";
+                outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetseg.pcd";
                 pcl::io::savePCDFileASCII (outfile, *minoutcloud);
-                outfile = "/home/nvidia/catkin_workspace/testgetall.pcd";
-                pcl::io::savePCDFileASCII (outfile, *pclCloud);                
+                outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetall.pcd";
+                pcl::io::savePCDFileASCII (outfile, *pclCloud); 
                 //state_ = STA_DONE;
                 if (debug_count_ == 1)
                 {

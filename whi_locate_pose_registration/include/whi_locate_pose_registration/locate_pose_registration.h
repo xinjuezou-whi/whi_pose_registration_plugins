@@ -52,6 +52,7 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
         bool checkcurpose();
+        double getrightImu(double angletar);
 
     private:
         geometry_msgs::Pose pose_feature_;
@@ -59,6 +60,7 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_standby_;
         geometry_msgs::Pose feature_cur_pose_;
         double curpose_thresh_;
+        double delta_radius_thresh_;
         double tf_listener_frequency_{ 20 };
         std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;

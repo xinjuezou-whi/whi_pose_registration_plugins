@@ -157,7 +157,12 @@ namespace pose_registration_plugins
 
     void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
     {
-        const std::lock_guard<std::mutex> lock(mtx_imu_);
+        double yawFromImu = 0.0;
+        {
+            const std::lock_guard<std::mutex> lock(mtx_imu_);
+            yawFromImu = angleyaw_imu_;
+        }
+        
         if (state_ == STA_ALIGN)
         {
             geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
@@ -165,12 +170,21 @@ namespace pose_registration_plugins
                 PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             if (issetimu_)
             {
-                angleDiff = angletar_imu_ - angleyaw_imu_;
+                angleDiff = angletar_imu_ - yawFromImu;
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_ALIGN, angletar_imu_ = %f, yawFromImu = %f, angleDiff = %f",
+                        angletar_imu_, yawFromImu, angleDiff );
+                }
             }
-            if (debug_count_ == 5)
+            else
             {
-                ROS_INFO("in state STA_ALIGN , angletar_imu_ = %f ,angleyaw_imu_=%f ,angleDiff=%f ",angletar_imu_,angleyaw_imu_,angleDiff );
-            }                
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_ALIGN, angletar_imu_ = %f, angleDiff=%f",
+                        angletar_imu_, angleDiff );
+                }
+            }        
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -185,12 +199,12 @@ namespace pose_registration_plugins
                         ROS_INFO(" zero config, STA_REGISTRATE_FINE finish ,direct to STA_ROUTE_VERTICAL ");
                     }
                     ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_HORIZON");
-                    ROS_INFO("STA_REGISTRATE_FINE finish , angleyaw_imu_ =%f ",angleyaw_imu_);
+                    ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
                 }
                 else if (prestate_ == STA_REGISTRATE)
                 {
                     state_ = STA_WAIT_SCAN;
-                    ROS_INFO("vertical finish, wait scan ");
+                    ROS_INFO("vertical finish, wait scan");
                 }
             }
             else
@@ -205,11 +219,23 @@ namespace pose_registration_plugins
             double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
                 PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             if (issetimu_)
-                angleDiff = angletar_imu_ - angleyaw_imu_ ;
-            if (debug_count_ == 5)
             {
-                ROS_INFO("in state STA_TO_VERTICAL , angletar_imu_ = %f ,angleyaw_imu_=%f ,angleDiff=%f ",angletar_imu_,angleyaw_imu_,angleDiff );
+                angleDiff = angletar_imu_ - yawFromImu;
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_VERTICAL, angletar_imu_ = %f, yawFromImu = %f, angleDiff=%f",
+                        angletar_imu_, yawFromImu, angleDiff);
+                }
             }
+            else
+            {
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_VERTICAL, angletar_imu_ = %f, angleDiff=%f",
+                        angletar_imu_, angleDiff);
+                }
+            }
+
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -231,12 +257,13 @@ namespace pose_registration_plugins
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             if (iszerorela_ )
             {
+                // Xinjue: what about the senario without imu?
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI);
-                angletar_imu_ = angleyaw_imu_ + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
+                angletar_imu_ = yawFromImu + PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
             }else
             {
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + leftorright_ * 0.5 * M_PI);
-                angletar_imu_ = angleyaw_imu_ + leftorright_ * 0.5 * M_PI;
+                angletar_imu_ = yawFromImu + leftorright_ * 0.5 * M_PI;
             }            
             angletar_imu_ = getrightImu(angletar_imu_);
             state_ = STA_TO_HORIZON;
@@ -248,10 +275,21 @@ namespace pose_registration_plugins
             double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
                 PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             if (issetimu_)
-                angleDiff = angletar_imu_ - angleyaw_imu_ ;
-            if (debug_count_ == 5)
             {
-                ROS_INFO("in state STA_TO_HORIZON , angletar_imu_ = %f ,angleyaw_imu_=%f ,angleDiff=%f ",angletar_imu_,angleyaw_imu_,angleDiff );
+                angleDiff = angletar_imu_ - yawFromImu;
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_HORIZON, angletar_imu_ = %f, yawFromImu = %f, angleDiff = %f",
+                        angletar_imu_, yawFromImu, angleDiff );
+                }
+            }
+            else
+            {
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_HORIZON, angletar_imu_ = %f, angleDiff = %f",
+                        angletar_imu_, angleDiff);
+                }
             }
             if (fabs(angleDiff) < yaw_tolerance_)
             {
@@ -259,9 +297,8 @@ namespace pose_registration_plugins
                 CmdVel.angular.z = 0.0;
 
                 state_ = STA_ROUTE_HORIZON;
-                ROS_INFO("sta_to_horizon finish , angleyaw_imu_ =%f ",angleyaw_imu_);
+                ROS_INFO("sta_to_horizon finish, yawFromImu = %f", yawFromImu);
                 ROS_INFO("STA_TO_HORIZON finish ");
-
             }
             else
             {
@@ -312,16 +349,18 @@ namespace pose_registration_plugins
             pose_target_.position.y = 0.0;
             if (iszerorela_)
             {
+                // Xinjue: what about the senario without imu?
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI); 
-                angletar_imu_ = angleyaw_imu_ - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
+                angletar_imu_ = yawFromImu - PoseUtilities::signOf(distance_horizon_) * 0.5 * M_PI;
             }
             else
             {
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - leftorright_ * 0.5 * M_PI); 
-                angletar_imu_ = angleyaw_imu_ - leftorright_ * 0.5 * M_PI;
+                angletar_imu_ = yawFromImu - leftorright_ * 0.5 * M_PI;
             }
             angletar_imu_ = getrightImu(angletar_imu_);
-            ROS_INFO("in state STA_PRE_VERTICAL finish , angletar_imu_ = %f ,angleyaw_imu_=%f",angletar_imu_,angleyaw_imu_ );
+            ROS_INFO("in state STA_PRE_VERTICAL finish, angletar_imu_ = %f, yawFromImu = %f",
+                angletar_imu_, yawFromImu);
             //进入第二条路径，更改当前点为起始点
             pose_standby_.position.x = transBaselinkMap.transform.translation.x;    
             pose_standby_.position.y = transBaselinkMap.transform.translation.y;  
@@ -374,7 +413,8 @@ namespace pose_registration_plugins
             pose_target_.position.x = 0.0;
             pose_target_.position.y = 0.0;
             pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle); 
-            angletar_imu_ = angleyaw_imu_ + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle;   
+            // Xinjue: what about the senario without imu?
+            angletar_imu_ = yawFromImu + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle;   
             angletar_imu_ = getrightImu(angletar_imu_);
             state_ = STA_TO_ORIENTATION;    
             ROS_INFO(" STA_TO_ORIENTATION finish ,to sta STA_TO_ORIENTATION ");       
@@ -385,11 +425,22 @@ namespace pose_registration_plugins
             double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
                 PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             if (issetimu_)
-                angleDiff = angletar_imu_ - angleyaw_imu_ ;
-            if (debug_count_ == 5)
             {
-                ROS_INFO("in state STA_TO_ORIENTATION , angletar_imu_ = %f ,angleyaw_imu_=%f ,angleDiff=%f ",angletar_imu_,angleyaw_imu_,angleDiff );
-            }                
+                angleDiff = angletar_imu_ - yawFromImu;
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_ORIENTATION, angletar_imu_ = %f, yawFromImu = %f, angleDiff = %f",
+                        angletar_imu_, yawFromImu, angleDiff);
+                }
+            }
+            else
+            {
+                if (debug_count_ == 5)
+                {
+                    ROS_INFO("in state STA_TO_ORIENTATION, angletar_imu_ = %f, angleDiff = %f",
+                        angletar_imu_, angleDiff);
+                }
+            }              
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -573,18 +624,16 @@ namespace pose_registration_plugins
 
     void LocatePoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
     {
+        if (queue_scan_)
+        {
+            queue_scan_->produce(std::bind(&LocatePoseRegistration::registration, this,
+                Laser), "registration");
+        }
+
         if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE)
         {
             std::lock_guard<std::mutex> lk(mtx_cv_);
             cv_.notify_all();
-        }
-        else
-        {
-            if (queue_scan_)
-            {
-                queue_scan_->produce(std::bind(&LocatePoseRegistration::registration, this,
-                    Laser), "registration");
-            }
         }
     }
 
@@ -594,7 +643,6 @@ namespace pose_registration_plugins
         tf2::Quaternion quaternion(Imudata->orientation.x, Imudata->orientation.y, Imudata->orientation.z,
             Imudata->orientation.w);
         angleyaw_imu_ = PoseUtilities::toEuler(quaternion)[2];
-        //ROS_INFO("angleyaw_imu =%f ",angleyaw_imu_);
     }
 
     double LocatePoseRegistration::getrightImu(double angletar)
@@ -840,15 +888,20 @@ namespace pose_registration_plugins
                 // 需要精确对齐
                 ROS_INFO("need algin, sta to vertical");
             }
-            const std::lock_guard<std::mutex> lock(mtx_imu_);
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_target_.position.x = 0.0;
             pose_target_.position.y = 0.0;
-            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);  
-            angletar_imu_ = angleyaw_imu_ - registAngles[2];
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
+            // Xinjue: what about the senario without imu?
+            double yawFromImu = 0.0;
+            {
+                const std::lock_guard<std::mutex> lock(mtx_imu_);
+                yawFromImu = angleyaw_imu_;
+            }
+            angletar_imu_ = yawFromImu - registAngles[2];
             //state_ = STA_TO_HORIZON;       
-            ROS_INFO("start sta_to_horizon, angletar_imu_ = %f , now angleyaw_imu_= %f",
-                angletar_imu_, angleyaw_imu_);
+            ROS_INFO("start sta_to_horizon, angletar_imu_ = %f , now yawFromImu = %f",
+                angletar_imu_, yawFromImu);
             iszerorela_ = false;
             //根据当前位置和标靶特征位置，计算相对距离;distance_horizon_,distance_vertical_
             {
@@ -864,7 +917,7 @@ namespace pose_registration_plugins
                     pose_target_.position.x = 0.0;
                     pose_target_.position.y = 0.0;
                     pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
-                    angletar_imu_ = angleyaw_imu_ - registAngles[2];
+                    angletar_imu_ = yawFromImu - registAngles[2];
                 }
                 ROS_INFO("distance_vertical = %f , distance_horizon_ = %f , iszerorela =%d",distance_vertical_, distance_horizon_, iszerorela_);
 

@@ -16,18 +16,20 @@ Changelog:
 ******************************************************************/
 #pragma once
 #include <ros/ros.h> 
-#include <whi_pose_registration/base_pose_registration.h>
-#include "std_srvs/SetBool.h"
+#include <std_srvs/SetBool.h>
 #include <sensor_msgs/LaserScan.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include "whi_pose_registration_common/pcl_utilities.h"
+#include <sensor_msgs/Imu.h>
+#include <whi_pose_registration/base_pose_registration.h>
+#include <whi_pose_registration_common/pcl_utilities.h>
+
 #include <memory>
 #include <mutex>
-#include <sensor_msgs/Imu.h>
+#include <thread>
+#include <condition_variable>
 
 namespace pose_registration_plugins
 {
-
     struct FeatureConfig
     {
         std::string name;
@@ -40,7 +42,7 @@ namespace pose_registration_plugins
     {
     public:
         LocatePoseRegistration();
-        virtual ~LocatePoseRegistration() = default;
+        virtual ~LocatePoseRegistration();
 
     public:
         void initialize() override;
@@ -52,6 +54,9 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
         bool checkcurpose();
+        double getrightImu(double angletar);
+        std::shared_ptr<void> registration(const sensor_msgs::LaserScan::ConstPtr& Laser);
+        void threadRegistration();
 
     private:
         geometry_msgs::Pose pose_feature_;
@@ -59,6 +64,7 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_standby_;
         geometry_msgs::Pose feature_cur_pose_;
         double curpose_thresh_;
+        double delta_radius_thresh_;
         double tf_listener_frequency_{ 20 };
         std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;
@@ -81,6 +87,9 @@ namespace pose_registration_plugins
         int ndtmaxiter_;
         std::string segment_type_{ "region_growing" };
         std::string mapframe_;
+        std::string laser_frame_;
+        std::string imu_frame_;
+        std::vector<double> laser_pose_;
         // cut-min
         int mincut_size_{ 300 };
         geometry_msgs::Point center_;
@@ -119,7 +128,6 @@ namespace pose_registration_plugins
         };
         int state_{ STA_DONE };
         int prestate_{ STA_DONE };
-        double find_tried_time_{ 0.0 };
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud_;
         bool issetimu_{ false };
@@ -127,9 +135,13 @@ namespace pose_registration_plugins
         double angleyaw_imu_;
         double angletar_imu_;
         std::mutex mtx_imu_;
-        double imu_delta_;
+
+        EventQueue<void>::UniquePtr queue_scan_{ nullptr };
+        std::thread th_registration_;
+        std::condition_variable cv_;
+        std::mutex mtx_cv_;
+        std::atomic<bool> terminated_{ false };
 
         int debug_count_{ 0 };
-
     };
 } // namespace pose_registration_plugins

@@ -8,9 +8,9 @@ Features:
 - client can produce and consume specified event with name
 - xxx
 
-Written by Xinjue Zou, xinjue.zou@outlook.com
+Written by Xinjue Zou, xinjue.zou.whi@gmail.com
 
-GNU General Public License, check LICENSE for more information.
+Apache License Version 2.0, check LICENSE for more information.
 All text above must be included in any redistribution.
 
 Changelog:
@@ -28,18 +28,19 @@ Changelog:
 #include <atomic>
 #include <assert.h>
 
+template<typename T>
 class EventQueue
 {
 public:
     static const std::string& VERSION()
     {
-        return "00.07";
+        return "00.08";
     }
 
 public:
     using SharedPtr = std::shared_ptr<EventQueue>;
     using UniquePtr = std::unique_ptr<EventQueue>;
-    using EventFunc = std::function<void()>; // nullary functor
+    using EventFunc = std::function<std::shared_ptr<T>()>; // nullary functor
 
 public:
     struct stopped {};
@@ -56,14 +57,18 @@ public:
     };
 
 public:
-    EventQueue(bool Blocking = false)
-        : blocking_(Blocking), state_(STATE_READY), ref_count_(0) {};
+    EventQueue(int MaxSize = 50, bool Blocking = false)
+        : max_size_(MaxSize), blocking_(Blocking), state_(STATE_READY), ref_count_(0) {};
     ~EventQueue() { this->stop(false); };
 
     void produce(EventFunc Event, const std::string Name = std::string(""))
     {
         std::unique_lock<std::mutex> lock(mtx_);
         assert(STATE_READY == state_);
+        if (queue_.size() == max_size_)
+        {
+            queue_.pop_front();
+        }
         queue_.emplace_back(Event, Name);
         cv_.notify_one();
     };
@@ -108,7 +113,7 @@ public:
             cv_.wait(lock, [=]() { return STATE_READY != state_ || !queue_.empty(); });
             if (!queue_.empty())
             {
-                std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
+                typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
                 {
                     return Obj.name_ == Name;
                 });
@@ -128,7 +133,7 @@ public:
         {
             if (!queue_.empty())
             {
-                std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
+                typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
                 {
                     return Obj.name_ == Name;
                 });
@@ -185,6 +190,7 @@ public:
     enum State { STATE_READY, STATE_STOPPED };
 
 protected:
+    int max_size_{ -1 };
     bool blocking_{ false };
     std::mutex mtx_;
     std::condition_variable cv_;

@@ -35,12 +35,12 @@ class PclVisualize
 public:
     static const std::string& VERSION()
     {
-        return "00.02";
+        return "00.03";
     }
 
 public:
     PclVisualize()
-        : queue_(std::make_unique<EventQueue>(false))
+        : queue_(std::make_unique<EventQueue<void>>(5, false))
     {
         // spawn the event queue thread
 		th_spinner_ = std::thread(std::bind(&PclVisualize::thViewerSpin, this));
@@ -71,14 +71,15 @@ public:
 private:
     // NOTE: ONLY ONE INSTANCE SHOULD BE INITIATED
     // otherwise the OpenGL would complain and crash, it is a PCL issue
-    void view(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
+    std::shared_ptr<void> view(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         int PointSize, std::array<double, 3> PointColor)
     {
         if (!viewer_)
         {
             viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
             viewer_->setBackgroundColor(0.0, 0.0, 0.0);
-        }else
+        }
+        else
         {
             viewer_->removeAllPointClouds();
             viewer_->removeAllShapes();
@@ -95,11 +96,13 @@ private:
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, CloudID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
             PointColor[0], PointColor[1], PointColor[2], CloudID);
+
+        return nullptr;
     }
 
-    void view02(const typename pcl::PointCloud<T>::Ptr Cur, const std::string& CurCloudID,
+    std::shared_ptr<void> view02(const typename pcl::PointCloud<T>::Ptr Cur, const std::string& CurCloudID,
         const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
-    const typename pcl::PointCloud<T>::Ptr Tar, const std::string& TarCloudID,
+        const typename pcl::PointCloud<T>::Ptr Tar, const std::string& TarCloudID,
         int PointSize, std::array<double, 3> PointColor)
     {
         if (!viewer_)
@@ -133,7 +136,6 @@ private:
             viewer_->addPointCloud<T>(Cur, CurCloudID);
         }              
 
-
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, CloudID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
             0.0, 1.0, 0.0, CloudID);
@@ -142,15 +144,16 @@ private:
             0.0, 0.0, 1.0, CurCloudID);               
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, TarCloudID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
-            1.0, 0.0, 0.0, TarCloudID);            
-    }    
+            1.0, 0.0, 0.0, TarCloudID);
+        
+        return nullptr;
+    }
 
     void thViewerSpin()
     {
         while (!terminated_.load())
         {
-            // handle send goal in callback done logic
-            EventQueue::EventFunc eventViewer(queue_->consume("view"));
+            EventQueue<void>::EventFunc eventViewer(queue_->consume("view"));
 	        if (eventViewer != nullptr)
 	        {
 		        // invoke the event means executing the action binded with it
@@ -165,7 +168,7 @@ private:
     };
 
 private:
-    EventQueue::UniquePtr queue_{ nullptr };
+    EventQueue<void>::UniquePtr queue_{ nullptr };
     pcl::visualization::PCLVisualizer::Ptr viewer_{ nullptr };
     std::thread th_spinner_;
     std::atomic_bool terminated_{ false };

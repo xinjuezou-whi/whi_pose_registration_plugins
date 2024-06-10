@@ -34,7 +34,7 @@ class EventQueue
 public:
     static const std::string& VERSION()
     {
-        return "00.08";
+        return "00.09";
     }
 
 public:
@@ -73,7 +73,7 @@ public:
         cv_.notify_one();
     };
 
-    EventFunc consume()
+    EventFunc consume(bool Reverse = false)
     {
         std::unique_lock<std::mutex> lock(mtx_);
         if (blocking_)
@@ -81,71 +81,17 @@ public:
             cv_.wait(lock, [=]() { return STATE_READY != state_ || !queue_.empty(); });
             if (!queue_.empty())
             {
-                EventFunc event(queue_.front().func_);
-                queue_.pop_front();
-                return event;
-            }
-            // The queue has been stopped. Notify the waiting thread blocked in
-            // eventQueue::stop(true) (if any) that the queue is empty now
-            cv_.notify_all();
-            throw stopped();
-        }
-        else
-        {
-            if (!queue_.empty())
-            {
-                EventFunc event(queue_.front().func_);
-                queue_.pop_front();
-                return event;
-            }
-            else
-            {
-                return nullptr;
-            }
-        }
-    };
-
-    EventFunc consume(const std::string& Name)
-    {
-        std::unique_lock<std::mutex> lock(mtx_);
-        if (blocking_)
-        {
-            cv_.wait(lock, [=]() { return STATE_READY != state_ || !queue_.empty(); });
-            if (!queue_.empty())
-            {
-                typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
+                if (Reverse)
                 {
-                    return Obj.name_ == Name;
-                });
-                if (found != queue_.end())
-                {
-                    EventFunc event(found->func_);
-                    queue_.erase(found);
-                    return event;
-                }
-            }
-            // The queue has been stopped. Notify the waiting thread blocked in
-            // eventQueue::stop(true) (if any) that the queue is empty now
-            cv_.notify_all();
-            throw stopped();
-        }
-        else
-        {
-            if (!queue_.empty())
-            {
-                typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
-                {
-                    return Obj.name_ == Name;
-                });
-                if (found != queue_.end())
-                {
-                    EventFunc event(found->func_);
-                    queue_.erase(found);
+                    EventFunc event(queue_.back().func_);
+                    queue_.pop_back();
                     return event;
                 }
                 else
                 {
-                    return nullptr;
+                    EventFunc event(queue_.front().func_);
+                    queue_.pop_front();
+                    return event;
                 }
             }
             else
@@ -153,6 +99,132 @@ public:
                 return nullptr;
             }
         }
+        else
+        {
+            if (!queue_.empty())
+            {
+                if (Reverse)
+                {
+                    EventFunc event(queue_.back().func_);
+                    queue_.pop_back();
+                    return event;
+                }
+                else
+                {
+                    EventFunc event(queue_.front().func_);
+                    queue_.pop_front();
+                    return event;
+                }
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+
+        // The queue has been stopped. Notify the waiting thread blocked in
+        // eventQueue::stop(true) (if any) that the queue is empty now
+        cv_.notify_all();
+        throw stopped();
+    };
+
+    EventFunc consume(const std::string& Name, bool Reverse = false)
+    {
+        std::unique_lock<std::mutex> lock(mtx_);
+        if (blocking_)
+        {
+            cv_.wait(lock, [=]() { return STATE_READY != state_ || !queue_.empty(); });
+            if (!queue_.empty())
+            {
+                if (Reverse)
+                {
+                    typename std::list<EventPack>::const_iterator found = std::find_if(queue_.end(), queue_.begin(), [=](const auto& Obj)
+                    {
+                        return Obj.name_ == Name;
+                    });
+                    if (found != queue_.end())
+                    {
+                        EventFunc event(found->func_);
+                        queue_.erase(found);
+                        return event;
+                    }
+                    else
+                    {
+                        return nullptr;
+                    }
+                }
+                else
+                {
+                    typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
+                    {
+                        return Obj.name_ == Name;
+                    });
+                    if (found != queue_.end())
+                    {
+                        EventFunc event(found->func_);
+                        queue_.erase(found);
+                        return event;
+                    }
+                    else
+                    {
+                        return nullptr;
+                    }
+                }
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+        else
+        {
+            if (!queue_.empty())
+            {
+                if (Reverse)
+                {
+                    typename std::list<EventPack>::const_iterator found = std::find_if(queue_.end(), queue_.begin(), [=](const auto& Obj)
+                    {
+                        return Obj.name_ == Name;
+                    });
+                    if (found != queue_.end())
+                    {
+                        EventFunc event(found->func_);
+                        queue_.erase(found);
+                        return event;
+                    }
+                    else
+                    {
+                        return nullptr;
+                    }
+                }
+                else
+                {
+                    typename std::list<EventPack>::const_iterator found = std::find_if(queue_.begin(), queue_.end(), [=](const auto& Obj)
+                    {
+                        return Obj.name_ == Name;
+                    });
+                    if (found != queue_.end())
+                    {
+                        EventFunc event(found->func_);
+                        queue_.erase(found);
+                        return event;
+                    }
+                    else
+                    {
+                        return nullptr;
+                    }
+                }
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+
+        // The queue has been stopped. Notify the waiting thread blocked in
+        // eventQueue::stop(true) (if any) that the queue is empty now
+        cv_.notify_all();
+        throw stopped();
     };
 
     void stop(bool WaitCompletion)

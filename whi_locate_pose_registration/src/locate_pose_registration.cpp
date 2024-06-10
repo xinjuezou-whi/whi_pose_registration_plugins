@@ -906,7 +906,7 @@ namespace pose_registration_plugins
                         cv_.wait(lk);
                     }
 
-                    EventQueue<void>::EventFunc eventRegistration(queue_scan_->consume("registration"));
+                    EventQueue<void>::EventFunc eventRegistration(queue_scan_->consume("registration", true));
                     if (eventRegistration)
                     {
                         // invoke the event means executing the action binded with it

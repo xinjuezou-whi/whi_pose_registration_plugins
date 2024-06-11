@@ -78,7 +78,6 @@ namespace pose_registration_plugins
         double feature_angle_;
         double distance_horizon_;
         double distance_vertical_;
-        double distance_drive_;
         double distthresh_horizon_;
         bool iszerorela_{ false };           // 相对位置配置为 0 
         double xyvel_{ 0.1 };

@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.04.1" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.04.2" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -719,7 +719,8 @@ namespace pose_registration_plugins
         }
 
         //--------------------从几个可能的特征找出最近的-----------
-        // Xinjue: compared with pose (0,0)?
+        // filter the target out within multiple patterns
+        // comparation in laser frame
         geometry_msgs::Pose originpose;
         originpose.position.x = 0;
         originpose.position.y = 0;
@@ -749,6 +750,7 @@ namespace pose_registration_plugins
         }
         
         //---------------------- 求最小包围圆 ----------------
+        // flitered target
         std::vector<mypoint> pvec;
         for (int i = 0; i < outcloud->points.size(); ++i)
         {
@@ -757,7 +759,6 @@ namespace pose_registration_plugins
             onepoint.y = outcloud->points[i].y;
             pvec.push_back(onepoint);
         }
-        
         double minradius;
         mypoint center;
         min_circle_cover(pvec, minradius, center);
@@ -773,11 +774,12 @@ namespace pose_registration_plugins
             onepoint.y = target_cloud_->points[i].y;
             tarpvec.push_back(onepoint);
         }
-        
         double tarminradius;
         mypoint tarcenter;
         min_circle_cover(tarpvec, tarminradius, tarcenter);
         ROS_INFO("targetcloud ,radius : %.10lf \n  center.x: %.10lf center.y: %.10lf ",tarminradius,tarcenter.x, tarcenter.y);
+        
+        // check if the filtered target meet the template pattern
         double delta_radius = minradius - tarminradius;
         ROS_INFO("delta_radius is: %f ",fabs(delta_radius));
         if(fabs(delta_radius) > delta_radius_thresh_)
@@ -824,7 +826,7 @@ namespace pose_registration_plugins
         }            
         ROS_INFO("finish segmentMinCut, get outcloud");
 
-        /// registration        
+        /// registration
         Eigen::Vector3f registAngles;
         double score;
         std::vector<double> transxy;
@@ -839,15 +841,13 @@ namespace pose_registration_plugins
         ROS_INFO("out regist, roll:%f, pitch:%f, yaw: %f, x trans: %f, ytrans: %f",
             registAngles[0], registAngles[1],  registAngles[2], transxy[0], transxy[1]);
         
-        pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
-        pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
         if (debug_count_ > 0)
         {
+            pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
+            pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
             static PclVisualize<pcl::PointXYZ> viewer;
             viewer.viewCloud02(minoutcloud,"cur_features" , transcloud, "debug_features", target_cloud_,"target_features");
         }
-        //ROS_INFO(" outmatrix: ");
-        //std::cout << outmatrix << std::endl;
         ROS_INFO("after segment, start registration ......");
         
         if (debug_count_ == 1 || debug_count_ == 3)
@@ -866,8 +866,6 @@ namespace pose_registration_plugins
             }
         }
 
-        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-
         if (registAngles[2] > 0.5 * M_PI)
         {
             state_ = STA_FAILED;
@@ -876,7 +874,8 @@ namespace pose_registration_plugins
         }
         
         // 转换矩阵正常的情况
-        if (fabs(registAngles[0]) < 0.02 && fabs(registAngles[1]) == 0)
+        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+        if (fabs(registAngles[0]) < 0.02 && fabs(registAngles[1]) < 0.02)
         {
             if (fabs(registAngles[2]) < yaw_tolerance_)
             {
@@ -899,35 +898,31 @@ namespace pose_registration_plugins
                 yawFromImu = angleyaw_imu_;
             }
             angletar_imu_ = yawFromImu - registAngles[2];
-            //state_ = STA_TO_HORIZON;       
             ROS_INFO("start sta_to_horizon, angletar_imu_ = %f , now yawFromImu = %f",
                 angletar_imu_, yawFromImu);
             iszerorela_ = false;
             //根据当前位置和标靶特征位置，计算相对距离;distance_horizon_,distance_vertical_
+            distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.y + transxy[0];      // this plus transxy[1] ,because forward
+            distance_horizon_ = fabs(target_rela_pose_[1]) + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
+
+            if (fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
             {
-                distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.y + transxy[0];      // this plus transxy[1] ,because forward
-                distance_horizon_ = fabs(target_rela_pose_[1]) + leftorright_ * transxy[1] - leftorright_ * pose_feature_.position.x;      // this plus ,because to left
-
-                if (fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
-                {
-                    distance_vertical_ = transxy[0];
-                    distance_horizon_ = transxy[1];
-                    iszerorela_ = true;
-                    double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                    pose_target_.position.x = 0.0;
-                    pose_target_.position.y = 0.0;
-                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
-                    angletar_imu_ = yawFromImu - registAngles[2];
-                }
-                ROS_INFO("distance_vertical = %f , distance_horizon_ = %f , iszerorela =%d",distance_vertical_, distance_horizon_, iszerorela_);
-
+                distance_vertical_ = transxy[0];
+                distance_horizon_ = transxy[1];
+                iszerorela_ = true;
+                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                pose_target_.position.x = 0.0;
+                pose_target_.position.y = 0.0;
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
+                angletar_imu_ = yawFromImu - registAngles[2];
             }
+            ROS_INFO("distance_vertical = %f , distance_horizon_ = %f , iszerorela =%d",distance_vertical_, distance_horizon_, iszerorela_);
+
             angletar_imu_ = getrightImu(angletar_imu_);
             angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_standby_.position.x = transBaselinkMap.transform.translation.x;
             pose_standby_.position.y = transBaselinkMap.transform.translation.y;
             pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
-            distance_drive_ = 0.0;
 
             prestate_ = state_;
             state_ = STA_ALIGN;

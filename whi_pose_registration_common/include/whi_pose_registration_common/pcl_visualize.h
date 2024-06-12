@@ -66,6 +66,11 @@ public:
     {
         queue_->produce(std::bind(&PclVisualize::view02, this,Cur ,CurCloudID , Src, CloudID, Tar, TarCloudID, PointSize, PointColor), "view");
     };    
+    void addviewCloud(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
+        int PointSize = 1, std::array<double, 3> PointColor = {0.0, 1.0, 0.0})
+    {
+        queue_->produce(std::bind(&PclVisualize::addview, this, Src, CloudID, PointSize, PointColor), "view");
+    };    
 
 
 private:
@@ -77,7 +82,7 @@ private:
         if (!viewer_)
         {
             viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
-            viewer_->setBackgroundColor(0.0, 0.0, 0.0);
+            viewer_->setBackgroundColor(1.0, 1.0, 1.0);
         }
         else
         {
@@ -108,7 +113,7 @@ private:
         if (!viewer_)
         {
             viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
-            viewer_->setBackgroundColor(0.0, 0.0, 0.0);
+            viewer_->setBackgroundColor(1.0, 1.0, 1.0);
         }
 
         if (viewer_->contains(CloudID))
@@ -148,6 +153,30 @@ private:
         
         return nullptr;
     }
+
+    std::shared_ptr<void> addview(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
+        int PointSize, std::array<double, 3> PointColor)
+    {
+        if (!viewer_)
+        {
+            viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
+            viewer_->setBackgroundColor(1.0, 1.0, 1.0);
+        }
+
+        if (viewer_->contains(CloudID))
+        {
+            viewer_->updatePointCloud<T>(Src, CloudID);
+        }
+        else
+        {
+            viewer_->addPointCloud<T>(Src, CloudID);
+        }
+        viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, CloudID);
+        viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
+            0.0, 0.0, 0.0, CloudID);
+
+        return nullptr;
+    }    
 
     void thViewerSpin()
     {

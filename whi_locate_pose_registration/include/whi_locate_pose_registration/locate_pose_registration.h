@@ -75,10 +75,14 @@ namespace pose_registration_plugins
         std::vector<FeatureConfig> features_config_;
         double xy_tolerance_{ 0.02 };
         double yaw_tolerance_{ 0.087 };
+        double trans_thresh_;
+        double trans_angle_thresh_{ 0.087 };
+        double adjust_angle_;
         double feature_angle_;
         double distance_horizon_;
         double distance_vertical_;
         double distthresh_horizon_;
+        double distance_todrive_{ 0.0 };
         bool iszerorela_{ false };           // 相对位置配置为 0 
         double xyvel_{ 0.1 };
         double rotvel_{ 0.2 };
@@ -111,6 +115,12 @@ namespace pose_registration_plugins
             STA_REGISTRATE,
             STA_REGISTRATE_FINE,
             STA_ALIGN,
+            STA_PRE_ROT_ANGLE,
+            STA_ROT_ANGLE,
+            STA_BACK,
+            STA_PRE_ROT_VERTICAL,
+            STA_ROT_VERTICAL,
+            STA_ADJUST_VERTICAL,
             STA_PRE_HORIZON,
             STA_TO_HORIZON,
             STA_ROUTE_HORIZON,

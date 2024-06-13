@@ -54,6 +54,7 @@ namespace pose_registration_plugins
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
         bool checkcurpose();
+        void updateCurrentPose();
         double getrightImu(double angletar);
         std::shared_ptr<void> registration(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void threadRegistration();
@@ -78,6 +79,7 @@ namespace pose_registration_plugins
         double trans_thresh_;
         double trans_angle_thresh_{ 0.087 };
         double adjust_angle_;
+        double offset_angle_{ 0.0 };
         double feature_angle_;
         double distance_horizon_;
         double distance_vertical_;

@@ -38,6 +38,34 @@ namespace pose_registration_plugins
         std::vector<double> target_rela_pose;
     };
 
+    enum State
+    {
+        STA_START = 0,
+        STA_REGISTRATE,
+        STA_REGISTRATE_FINE,
+        STA_ALIGN,
+        STA_PRE_ROT_ANGLE,
+        STA_ROT_ANGLE,
+        STA_BACK,
+        STA_PRE_ROT_VERTICAL,
+        STA_ROT_VERTICAL,
+        STA_ADJUST_VERTICAL,
+        STA_PRE_HORIZON,
+        STA_TO_HORIZON,
+        STA_ROUTE_HORIZON,
+        STA_PRE_VERTICAL,
+        STA_TO_VERTICAL,
+        STA_PRE_ROUTE_VERTICAL,
+        STA_ROUTE_VERTICAL,
+        STA_PRE_ORIENTATION,
+        STA_TO_ORIENTATION,
+        STA_DONE,
+        STA_FAILED,
+        STA_WAIT_IMU,
+        STA_WAIT_SCAN,
+        STA_DEBUG
+    };
+
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
     {
     public:
@@ -70,6 +98,17 @@ namespace pose_registration_plugins
         std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;
         geometry_msgs::Pose pose_target_;
+        geometry_msgs::Pose pose_end_;
+        double controller_frequency_;
+        double next_multi_;
+        double next_dis_thresh_;
+        double get_align_imu_{ 0.0 };
+        double get_align_angle_{ 0.0 };
+        geometry_msgs::Pose vertical_start_pose_;
+        double direct_dist_{ 0.04 };
+        double horizon_vel_{ 0.1 };
+        int newplanflag_{ 0 };
+        double inertial_rotvel_{ 0.25 };
         std::vector<double> target_rela_pose_ ;
         int leftorright_{ 1 };
         std::string model_cloud_path_;
@@ -111,32 +150,6 @@ namespace pose_registration_plugins
         double feature_segment_distance_thresh_{ 0.04 };
         int feature_min_size_{ 10 };
         int feature_max_size_{ 200 };            
-        enum State
-        {
-            STA_START = 0,
-            STA_REGISTRATE,
-            STA_REGISTRATE_FINE,
-            STA_ALIGN,
-            STA_PRE_ROT_ANGLE,
-            STA_ROT_ANGLE,
-            STA_BACK,
-            STA_PRE_ROT_VERTICAL,
-            STA_ROT_VERTICAL,
-            STA_ADJUST_VERTICAL,
-            STA_PRE_HORIZON,
-            STA_TO_HORIZON,
-            STA_ROUTE_HORIZON,
-            STA_PRE_VERTICAL,
-            STA_TO_VERTICAL,
-            STA_ROUTE_VERTICAL,
-            STA_PRE_ORIENTATION,
-            STA_TO_ORIENTATION,
-            STA_DONE,
-            STA_FAILED,
-            STA_WAIT_IMU,
-            STA_WAIT_SCAN,
-            STA_DEBUG
-        };
         int state_{ STA_DONE };
         int prestate_{ STA_DONE };
 

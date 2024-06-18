@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.04.2" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.05.1" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -99,13 +99,17 @@ namespace pose_registration_plugins
             printf("target_rela_pose: [%f, %f, %f]",(*oneiter).target_rela_pose[0],(*oneiter).target_rela_pose[1],(*oneiter).target_rela_pose[2]);
 
         }
-        
+        node_handle_->param("pose_registration/controller_frequency", controller_frequency_, 10.0);
         node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
         node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);
         node_handle_->param("pose_registration/LocatePose/trans_thresh", trans_thresh_, 0.03);
         node_handle_->param("pose_registration/LocatePose/trans_angle_thresh", trans_angle_thresh_, 0.087);
         node_handle_->param("pose_registration/LocatePose/adjust_angle", adjust_angle_, 45.0);
         node_handle_->param("pose_registration/LocatePose/offset_angle", offset_angle_, 0.0);
+        node_handle_->param("pose_registration/LocatePose/direct_dist", direct_dist_, 0.04);
+        node_handle_->param("pose_registration/LocatePose/newplanflag", newplanflag_, 1);
+        node_handle_->param("pose_registration/LocatePose/inertial_rotvel", inertial_rotvel_, 0.25);
+        
         offset_angle_ = angles::from_degrees(offset_angle_);
         adjust_angle_ = angles::from_degrees(adjust_angle_);
         trans_angle_thresh_ = angles::from_degrees(trans_angle_thresh_);
@@ -127,7 +131,10 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/rotvel", rotvel_, 0.1);    
         node_handle_->param("pose_registration/LocatePose/horizon_aligned_thresh", distthresh_horizon_, 0.005);   
         node_handle_->param("pose_registration/LocatePose/pattern_met_distance", curpose_thresh_, 0.5);  
-        node_handle_->param("pose_registration/LocatePose/delta_radius_thresh", delta_radius_thresh_, 0.5);    
+        node_handle_->param("pose_registration/LocatePose/delta_radius_thresh", delta_radius_thresh_, 0.5); 
+        node_handle_->param("pose_registration/LocatePose/next_dis_thresh", next_dis_thresh_, 0.05); 
+        node_handle_->param("pose_registration/LocatePose/next_multi", next_multi_, 1.0); 
+        node_handle_->param("pose_registration/LocatePose/horizon_vel", horizon_vel_, 0.1); 
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
@@ -207,6 +214,7 @@ namespace pose_registration_plugins
                     {
                         distance_todrive_ = distance_vertical_;
                         state_ = STA_ADJUST_VERTICAL;
+                        updateCurrentPose(); 
                         ROS_INFO(" zero config, STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ");
                     }
                     ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
@@ -373,7 +381,8 @@ namespace pose_registration_plugins
                     {
                         //state_ = STA_DEBUG;
                     }
-                }else
+                }
+                else
                 {
                     //state_ = STA_PRE_HORIZON;
                     ROS_INFO("STA_ADJUST_VERTICAL finish "); 
@@ -395,8 +404,21 @@ namespace pose_registration_plugins
             angletar_imu_ = yawFromImu + leftorright_ * 0.5 * M_PI + offset_angle_;       
             angletar_imu_ = getrightImu(angletar_imu_);
             updateCurrentPose(); 
-            distance_horizon_ = fabs(target_rela_pose_[1]) - leftorright_ * pose_feature_.position.x;
+            distance_horizon_ = fabs(target_rela_pose_[1]) - leftorright_ * pose_feature_.position.x;    // mark here by zhouyue
             distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.y;
+            get_align_imu_ = yawFromImu;
+            get_align_angle_ = angleBaselink;
+            geometry_msgs::Pose relapos;
+            relapos.position.x = distance_vertical_;
+            relapos.position.y = target_rela_pose_[1] - pose_feature_.position.x;
+            relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+            pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;         
+            ROS_INFO("STA_PRE_HORIZON curpose is :[%f, %f ],get_align_imu_: %f",curpose.position.x, curpose.position.y,get_align_imu_);   
+            ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
+
             state_ = STA_TO_HORIZON;
             ROS_INFO("STA_PRE_HORIZON finish,  start STA_TO_HORIZON "); 
         }
@@ -469,7 +491,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.x = PoseUtilities::signOf(distDiff) * horizon_vel_;   //xyvel_
                 CmdVel.linear.y = 0.0;
             }
         }
@@ -481,6 +503,7 @@ namespace pose_registration_plugins
             pose_target_.position.y = 0.0;
             pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - leftorright_ * 0.5 * M_PI); 
             angletar_imu_ = yawFromImu - leftorright_ * 0.5 * M_PI;
+            angletar_imu_ = get_align_imu_;
             angletar_imu_ = getrightImu(angletar_imu_);
             ROS_INFO("in state STA_PRE_VERTICAL finish, angletar_imu_ = %f, yawFromImu = %f",
                 angletar_imu_, yawFromImu);
@@ -517,9 +540,24 @@ namespace pose_registration_plugins
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
 
-                state_ = STA_ROUTE_VERTICAL;
+                state_ = STA_PRE_ROUTE_VERTICAL;
                 updateCurrentPose(); 
-                ROS_INFO("STA_TO_VERTICAL finish ,start STA_ROUTE_VERTICAL " );
+                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
+                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
+                ROS_INFO("STA_TO_VERTICAL finish ,start STA_PRE_ROUTE_VERTICAL,vertical_start_pose_ :[%f ,%f] ",vertical_start_pose_.position.x ,vertical_start_pose_.position.y );
+                geometry_msgs::Point pntEnd,pntCur,pntForward;
+                pntEnd.x = pose_end_.position.x;
+                pntEnd.y = pose_end_.position.y;
+                pntCur.x = vertical_start_pose_.position.x;
+                pntCur.y = vertical_start_pose_.position.y;    
+                pntForward.x = pntCur.x + 0.2;
+                pntForward.y = pntCur.y;
+                auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
+                auto vecForward = PoseUtilities::createVector2D(pntCur,pntForward);
+                double targetYaw = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
+                ROS_INFO("targetYaw = %f, curYaw = %f ",targetYaw ,PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2] );
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, targetYaw);
+
             }
             else
             {
@@ -531,48 +569,264 @@ namespace pose_registration_plugins
                 }                
                 prestate_ = state_;
             }
-        }        
-        else if (state_ == STA_ROUTE_VERTICAL)
+        }      
+        else if (state_ == STA_PRE_ROUTE_VERTICAL)
         {
             geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            geometry_msgs::Pose curpose;
-            curpose.position.x = transBaselinkMap.transform.translation.x;
-            curpose.position.y = transBaselinkMap.transform.translation.y;
-            double routedis = PoseUtilities::distance(curpose,pose_standby_);
-            double extradis = fabs(distance_vertical_) + 0.3;
-            double distDiff = fabs(distance_vertical_) - routedis;
-            //第二条路径行驶距离超出计算值 30cm ；偏差过大，说明前面有问题
-            if (routedis > extradis)
+            double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            if (issetimu_)
             {
-                CmdVel.linear.x = 0.0;
-                CmdVel.linear.y = 0.0;
-                state_ = STA_FAILED;
-                ROS_INFO("fail at STA_ROUTE_VERTICAL ,routedis too far , route1 rotate wrong ");
+                //angleDiff = angletar_imu_ - yawFromImu;
             }
-            else if (fabs(distDiff) < xy_tolerance_)
+
+            if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
-                if(fabs(target_rela_pose_[2]) < 0.01)
-                {
-                    state_ = STA_DONE;
-                    ROS_INFO(" STA_ROUTE_VERTICAL finish ,arrive done ");
-                    if(debug_count_ > 0)
-                    {
-                        //state_ = STA_DEBUG;
-                    }
 
-                }else
-                {
-                    state_ = STA_PRE_ORIENTATION;
-                    ROS_INFO(" STA_ROUTE_VERTICAL finish ,to sta STA_PRE_ORIENTATION ");
-                }                
+                state_ = STA_ROUTE_VERTICAL;
+                ROS_INFO("STA_PRE_ROUTE_VERTICAL finish ,start STA_ROUTE_VERTICAL,vertical_start_pose_ :[%f ,%f] ",vertical_start_pose_.position.x ,vertical_start_pose_.position.y );
+                updateCurrentPose(); 
+                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
+                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
             }
             else
             {
-                CmdVel.linear.x = PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_vertical_) * xyvel_;
-                CmdVel.linear.y = 0.0;
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;          
             }
+
+        }  
+        else if (state_ == STA_ROUTE_VERTICAL)
+        {
+            int newplan = newplanflag_;
+            static std::string substate = "direct" ;
+            static int lastforward = 0;   // 0: direct ,1:left , -1:right
+            if (!newplan)
+            {
+                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                geometry_msgs::Pose curpose;
+                curpose.position.x = transBaselinkMap.transform.translation.x;
+                curpose.position.y = transBaselinkMap.transform.translation.y;
+                double routedis = PoseUtilities::distance(curpose,pose_standby_);
+                double extradis = fabs(distance_vertical_) + 0.3;
+                double distDiff = fabs(distance_vertical_) - routedis;
+                //第二条路径行驶距离超出计算值 30cm ；偏差过大，说明前面有问题
+                if (routedis > extradis)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.linear.y = 0.0;
+                    state_ = STA_FAILED;
+                    ROS_INFO("fail at STA_ROUTE_VERTICAL ,routedis too far , route1 rotate wrong ");
+                }
+                else if (fabs(distDiff) < xy_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+                    if(fabs(target_rela_pose_[2]) < 0.01)
+                    {
+                        state_ = STA_DONE;
+                        ROS_INFO(" STA_ROUTE_VERTICAL finish ,arrive done ");
+                        ROS_INFO(" arrive curpose is :[%f, %f]",curpose.position.x , curpose.position.y);
+                        if(debug_count_ > 0)
+                        {
+                            //state_ = STA_DEBUG;
+                        }
+
+                    }
+                    else
+                    {
+                        state_ = STA_PRE_ORIENTATION;
+                        ROS_INFO(" STA_ROUTE_VERTICAL finish ,to sta STA_PRE_ORIENTATION ");
+                    }                
+                }
+                else
+                {
+                    CmdVel.linear.x = PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_vertical_) * xyvel_;
+                    CmdVel.linear.y = 0.0;
+                }
+
+            }
+            else
+            {
+                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                geometry_msgs::Pose curpose;
+                curpose.position.x = transBaselinkMap.transform.translation.x;
+                curpose.position.y = transBaselinkMap.transform.translation.y;
+                double diffX = pose_end_.position.x - curpose.position.x;
+                double diffY = pose_end_.position.y - curpose.position.y;
+                double diffAngle = get_align_angle_ - PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                if (issetimu_)
+                {
+                    diffAngle = angles::shortest_angular_distance(yawFromImu,get_align_imu_);
+                }
+                double curdis = PoseUtilities::distance(curpose,pose_end_);
+                ROS_INFO("diffx: %f, diffy: %f,diffAngle: %f ,curdis:%f ",diffX,diffY,diffAngle,curdis);
+                if (fabs(diffX) < xy_tolerance_ && fabs(diffY) < xy_tolerance_ && substate != "endrot"  )
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+                    if (fabs(target_rela_pose_[2]) < 0.01)
+                    {
+                        if (fabs(diffAngle) <=  yaw_tolerance_)
+                        {
+                            state_ = STA_DONE;
+                            ROS_INFO("diffX diffY min, STA_ROUTE_VERTICAL finish ,arrive done ");
+                            substate = "direct" ;
+                            lastforward = 0;
+                            return ;
+                        }
+                        else 
+                        {
+                            substate = "pre_endrot";
+                            ROS_INFO(" diffX diffY min, start pre_endrot ");
+                            //angletar_imu_ = getrightImu(angletar_imu_);                              
+                        }
+                        
+
+                    }
+                    else
+                    {
+                        if (fabs(diffAngle) <=  yaw_tolerance_)
+                        {
+                            state_ = STA_PRE_ORIENTATION;
+                            ROS_INFO("diffX diffY min, STA_ROUTE_VERTICAL finish ,to sta STA_PRE_ORIENTATION ");
+                            substate = "direct" ;
+                            lastforward = 0;
+                            return ;
+                        }
+                        else 
+                        {
+                            substate = "pre_endrot"; 
+                        }                        
+                    }
+                }
+
+                geometry_msgs::Point pntEnd,pntCur,pntStart,pntNext,pntCross;
+                pntEnd.x = pose_end_.position.x;
+                pntEnd.y = pose_end_.position.y;
+                pntCur.x = curpose.position.x;
+                pntCur.y = curpose.position.y;       
+                pntStart.x = vertical_start_pose_.position.x;
+                pntStart.y = vertical_start_pose_.position.y;    
+                geometry_msgs::Pose nextPose,poseDelta;
+                poseDelta.position.x = direct_dist_ * next_multi_ / controller_frequency_;
+                poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                nextPose = PoseUtilities::applyTransform(poseDelta, transBaselinkMap);
+                pntNext.x = nextPose.position.x;
+                pntNext.y = nextPose.position.y;
+                ROS_INFO("curpose:[%f,%f] , nextpose:[%f,%f]",pntCur.x,pntCur.y,pntNext.x,pntNext.y);
+
+                //求当前点到目标路径垂直交点             
+                double k1 = (pntEnd.y - pntStart.y)/(pntEnd.x - pntStart.x);
+                double k2 = (pntStart.x - pntEnd.x)/(pntEnd.y - pntStart.y);
+                pntCross.x = (pntCur.y - pntStart.y + k1 * pntStart.x - k2 * pntCur.x)/(k1 - k2);
+                pntCross.y = k1*(pntCross.x - pntStart.x) + pntStart.y;
+
+                ROS_INFO("pntCross:[%f,%f]",pntCross.x,pntCross.y);
+
+                auto vecCrossNext = PoseUtilities::createVector2D(pntCross, pntNext);
+                auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
+                auto vecStartEnd = PoseUtilities::createVector2D(pntStart,pntEnd);
+                auto vecStartNext = PoseUtilities::createVector2D(pntStart,pntNext);
+                auto vecStartCur = PoseUtilities::createVector2D(pntStart,pntCur);
+
+                double nextAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd, vecCrossNext);
+                double disStartNext = PoseUtilities::distance(pntNext,pntCur);
+                double nextDelta = disStartNext * sin(fabs(nextAngle));
+                double curAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd,vecStartCur);
+                ROS_INFO("nextAngle: %f, nextDelta: %f, curAngle: %f", nextAngle, nextDelta, curAngle);
+                if(PoseUtilities::signOf(nextAngle) != PoseUtilities::signOf(curAngle))
+                {
+                    ROS_INFO("------------ +++++++++++++signOf(nextAngle) != signOf(curAngle)  --------");
+                }
+
+                double routedis = PoseUtilities::distance(pntStart,pntEnd);
+                double curStartdis = PoseUtilities::distance(pntCur,pntStart);
+
+                //double forwardAngle = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
+                double curendAngle = PoseUtilities::angleBetweenVectors2D(vecCurEnd, vecStartEnd);
+                ROS_INFO("curendAngle : %f",curendAngle);
+                if (substate == "direct" )
+                {
+
+                    if (fabs(curendAngle) >= M_PI / 2 || curStartdis >= routedis)
+                    {
+                        substate = "pre_endrot";
+                        ROS_INFO("fabs(delta) >= M_PI / 2, start pre_endrot , curendAngle: %f",curendAngle);   
+                        ROS_INFO("curdis : %f, routedis : %f",curStartdis, routedis);  
+                    }
+                    else
+                    {
+                        CmdVel.linear.x = direct_dist_;
+                        //float multi = 0.0;
+                        //multi = curendAngle / angles::from_degrees(5.0)  ;
+                        //CmdVel.angular.z = -1 * PoseUtilities::signOf(curendAngle) * inertial_rotvel_ * multi ;//* fabs(curendAngle);
+                        if (nextDelta > next_dis_thresh_ || diffAngle > yaw_tolerance_)
+                        {
+                            CmdVel.angular.z = -1 * PoseUtilities::signOf(nextAngle) * inertial_rotvel_ *
+                                fabs(nextAngle) / 5.0;
+                        }
+                        else
+                        {
+                            CmdVel.angular.z = 0.0;
+                        }
+                        CmdVel.angular.z = fabs(CmdVel.angular.z) > inertial_rotvel_ ?
+                            PoseUtilities::signOf(CmdVel.angular.z) * inertial_rotvel_ : CmdVel.angular.z;
+                        ROS_INFO("CmdVel.angular.z: %f", CmdVel.angular.z);
+                    }   
+                    //updateCurrentPose();                 
+
+                }
+                else if (substate == "pre_endrot")
+                {
+                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_); 
+                    angletar_imu_ = get_align_imu_; 
+                    substate = "endrot";
+                }
+                else if (substate == "endrot" )
+                {
+
+                    geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                    double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
+                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                    if (issetimu_)
+                    {
+                        angleDiff = angletar_imu_ - yawFromImu;
+                    }
+                    if (fabs(angleDiff) < yaw_tolerance_)
+                    {
+                        CmdVel.linear.x = 0.0;
+                        CmdVel.angular.z = 0.0;
+
+                        if (fabs(target_rela_pose_[2]) < 0.01)
+                        {
+                            state_ = STA_DONE;
+                            ROS_INFO("endrot STA_ROUTE_VERTICAL finish ,arrive done ");
+                        }
+                        else
+                        {
+                            state_ = STA_PRE_ORIENTATION;
+                            ROS_INFO("endrot STA_ROUTE_VERTICAL finish ,to sta STA_PRE_ORIENTATION ");
+
+                        }
+                        substate = "direct" ;
+                        lastforward = 0;
+                    }
+                    else
+                    {
+                        CmdVel.linear.x = 0.0;
+                        CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                        ROS_INFO("in endrot , rot");                
+                    }
+
+                }
+
+
+            }
+
         }
         else if (state_ == STA_PRE_ORIENTATION)
         {
@@ -1073,11 +1327,21 @@ namespace pose_registration_plugins
                 if(fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
                 {
                     
-                    state_ = STA_DONE;
-                    ROS_INFO("sta_done");
+                    if(fabs(target_rela_pose_[2]) < 0.001)
+                    {
+                        state_ = STA_DONE;
+                        ROS_INFO("sta_done");
+                    }
+                    else
+                    {
+
+                        state_ = STA_PRE_ORIENTATION;
+                        ROS_INFO(" target_rela_pose_[2] > 0, start STA_PRE_ORIENTATION ");
+                    }
 
                     return nullptr;
-                }else
+                }
+                else
                 {
                     state_ = STA_PRE_HORIZON;
                     ROS_INFO("to sta pre horizon ");

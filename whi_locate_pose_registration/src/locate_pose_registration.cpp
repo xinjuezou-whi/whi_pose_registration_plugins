@@ -102,7 +102,7 @@ namespace pose_registration_plugins
         }
         catch (const std::exception& e)
         {
-            std::cout << "failed to load features_file config file " << config_file << std::endl;
+            ROS_FATAL_STREAM("failed to load protocol config file " << config_file);
         }
 
         node_handle_->param("pose_registration/controller_frequency", controller_frequency_, 10.0);

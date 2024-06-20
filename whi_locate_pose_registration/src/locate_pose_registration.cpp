@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.05.2" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.1" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -51,54 +51,60 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/model_cloud_path", model_cloud_path_, std::string("modelcloudpath"));
         std::string config_file;
         node_handle_->param("pose_registration/LocatePose/features_file", config_file, std::string("modelcloudpath"));
-        printf("configfile is %s \n",config_file.c_str());
-        YAML::Node config_node = YAML::LoadFile(config_file.c_str());
-        YAML::Node featurenode = config_node;
-        for (const auto &it : featurenode) 
+        printf("configfile is %s \n", config_file.c_str());
+        try
         {
-            FeatureConfig onefeature;
-            for (const auto &pair : it) 
+            YAML::Node config_node = YAML::LoadFile(config_file.c_str());
+            YAML::Node featurenode = config_node;
+            for (const auto &it : featurenode) 
             {
-                if (pair.first.as<std::string>() == "name")
+                FeatureConfig onefeature;
+                for (const auto &pair : it) 
                 {
-                    onefeature.name = pair.second.as<std::string>();
-                }          
-                if (pair.first.as<std::string>() == "cur_pose")
-                {
-                    for (const auto& item : pair.second)
+                    if (pair.first.as<std::string>() == "name")
                     {
-                        onefeature.cur_pose.push_back(item.as<double>());
+                        onefeature.name = pair.second.as<std::string>();
+                    }          
+                    if (pair.first.as<std::string>() == "cur_pose")
+                    {
+                        for (const auto& item : pair.second)
+                        {
+                            onefeature.cur_pose.push_back(item.as<double>());
+                        }
                     }
+                    if (pair.first.as<std::string>() == "feature_pose")
+                    {
+                        for (const auto& item : pair.second)
+                        {
+                            onefeature.feature_pose.push_back(item.as<double>());
+                        }
+                    }
+                    if (pair.first.as<std::string>() == "target_relative_pose")
+                    {
+                        for (const auto& item : pair.second)
+                        {
+                            onefeature.target_rela_pose.push_back(item.as<double>());
+                        }
+                    }                    
+
                 }
-                if (pair.first.as<std::string>() == "feature_pose")
-                {
-                    for (const auto& item : pair.second)
-                    {
-                        onefeature.feature_pose.push_back(item.as<double>());
-                    }
-                }
-                if (pair.first.as<std::string>() == "target_relative_pose")
-                {
-                    for (const auto& item : pair.second)
-                    {
-                        onefeature.target_rela_pose.push_back(item.as<double>());
-                    }
-                }                    
+                features_config_.push_back(onefeature);
+            }
+
+            for (auto oneiter = features_config_.begin(); oneiter!= features_config_.end(); oneiter++)
+            {
+                printf("onefeature: \n");
+                printf("name: %s ,cur_pose: [ %f, %f, %f  ]" , (*oneiter).name.c_str() , (*oneiter).cur_pose[0],(*oneiter).cur_pose[1],(*oneiter).cur_pose[2] );
+                printf("feature_pose: [%f, %f, %f]",(*oneiter).feature_pose[0],(*oneiter).feature_pose[1],(*oneiter).feature_pose[2]);
+                printf("target_rela_pose: [%f, %f, %f]",(*oneiter).target_rela_pose[0],(*oneiter).target_rela_pose[1],(*oneiter).target_rela_pose[2]);
 
             }
-            features_config_.push_back(onefeature);
-
         }
-        
-
-        for (auto oneiter = features_config_.begin(); oneiter!= features_config_.end(); oneiter++)
+        catch (const std::exception& e)
         {
-            printf("onefeature: \n");
-            printf("name: %s ,cur_pose: [ %f, %f, %f  ]" , (*oneiter).name.c_str() , (*oneiter).cur_pose[0],(*oneiter).cur_pose[1],(*oneiter).cur_pose[2] );
-            printf("feature_pose: [%f, %f, %f]",(*oneiter).feature_pose[0],(*oneiter).feature_pose[1],(*oneiter).feature_pose[2]);
-            printf("target_rela_pose: [%f, %f, %f]",(*oneiter).target_rela_pose[0],(*oneiter).target_rela_pose[1],(*oneiter).target_rela_pose[2]);
-
+            ROS_FATAL_STREAM("failed to load protocol config file " << config_file);
         }
+
         node_handle_->param("pose_registration/controller_frequency", controller_frequency_, 10.0);
         node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
         node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);

@@ -13,7 +13,8 @@ All text above must be included in any redistribution.
 Changelog:
 2024-05-11: Initial version
 2024-06-19: update imu navigation while route vertical
-2024-06-20: modify endpose relative location fixed,add curpose orientation angle
+2024-06-20: modify endpose relative location fixed ;add curpose orientation angle ;
+            modify  STA_ADJUST_VERTICAL to STA_WAIT_SCAN
 ******************************************************************/
 #pragma once
 #include <ros/ros.h> 
@@ -134,6 +135,7 @@ namespace pose_registration_plugins
         std::string laser_frame_;
         std::string imu_frame_;
         std::vector<double> laser_pose_;
+        double wait_scan_time_;
         // cut-min
         int mincut_size_{ 300 };
         geometry_msgs::Point center_;

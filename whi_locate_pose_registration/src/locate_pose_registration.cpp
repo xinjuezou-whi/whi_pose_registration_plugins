@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.1" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.2" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -140,6 +140,8 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/predict_period_count", predict_period_count_, 1.0); 
         node_handle_->param("pose_registration/LocatePose/horizon_offset_vel", horizon_offset_vel_, 0.1); 
         node_handle_->param("pose_registration/LocatePose/vertical_to_rotvel", vertical_to_rotvel_, 0.1); 
+        node_handle_->param("pose_registration/LocatePose/wait_scan_time", wait_scan_time_, 0.8); 
+        
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
@@ -391,7 +393,8 @@ namespace pose_registration_plugins
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
 
-                state_ = STA_REGISTRATE_FINE;
+                prestate_ = state_;
+                state_ = STA_WAIT_SCAN;
             }
             else
             {
@@ -917,10 +920,10 @@ namespace pose_registration_plugins
             CmdVel.linear.x = 0.0;
             CmdVel.angular.z = 0.0;
 
-            if ((timeNow - preTime).toSec() >= 0.2)
+            if ((timeNow - preTime).toSec() >= wait_scan_time_)
             {
                 index = 0;
-                if (prestate_ == STA_REGISTRATE)
+                if (prestate_ == STA_REGISTRATE || prestate_ == STA_ADJUST_VERTICAL )
                 {
                     state_ = STA_REGISTRATE_FINE;
                     ROS_INFO("start STA_REGISTRATE_FINE ");

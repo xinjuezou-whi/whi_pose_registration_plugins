@@ -61,7 +61,6 @@ namespace pose_registration_plugins
         STA_TO_ORIENTATION,
         STA_DONE,
         STA_FAILED,
-        STA_WAIT_IMU,
         STA_WAIT_SCAN,
         STA_DEBUG
     };
@@ -92,39 +91,39 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_arrive_;
         geometry_msgs::Pose pose_standby_;
         geometry_msgs::Pose feature_cur_pose_;
-        double curpose_thresh_;
-        double delta_radius_thresh_;
+        double pattern_met_location_thresh_{ 0.5 };
+        double pattern_met_radius_thresh_{ 0.05 };
         double tf_listener_frequency_{ 20 };
         std::mutex mtx_cut_min_;
         geometry_msgs::TransformStamped tf_baselink_map_;
         geometry_msgs::Pose pose_target_;
         geometry_msgs::Pose pose_end_;
+        geometry_msgs::Pose getfea_cur_pose_;
         double controller_frequency_;
-        double next_multi_;
-        double next_dis_thresh_;
+        double predict_period_count_;
+        double predict_dist_thresh_;
         double get_align_imu_{ 0.0 };
         double get_align_angle_{ 0.0 };
         geometry_msgs::Pose vertical_start_pose_;
-        double direct_dist_{ 0.04 };
-        double horizon_vel_{ 0.1 };
-        int newplanflag_{ 0 };
+        double horizon_offset_vel_{ 0.1 };
+        double vertical_to_rotvel_{ 0.1 };
+        bool using_inertial_{ true };
         double inertial_rotvel_{ 0.25 };
+        double inertial_xyvel_{ 0.04 };
         std::vector<double> target_rela_pose_ ;
         int leftorright_{ 1 };
         std::string model_cloud_path_;
         std::vector<FeatureConfig> features_config_;
         double xy_tolerance_{ 0.02 };
         double yaw_tolerance_{ 0.087 };
-        double trans_thresh_;
-        double trans_angle_thresh_{ 0.087 };
-        double adjust_angle_;
-        double offset_angle_{ 0.0 };
+        double regist_linear_thresh_{ 0.03 };
+        double regist_yaw_thresh_{ 0.087 };
+        double zig_angle_;
         double feature_angle_;
         double distance_horizon_;
         double distance_vertical_;
         double distthresh_horizon_;
         double distance_todrive_{ 0.0 };
-        bool iszerorela_{ false };           // 相对位置配置为 0 
         double xyvel_{ 0.1 };
         double rotvel_{ 0.2 };
         std::vector<float> ndtsample_coeffs_;
@@ -157,7 +156,7 @@ namespace pose_registration_plugins
         bool issetimu_{ false };
         std::unique_ptr<ros::Subscriber> sub_imu_{ nullptr };
         double angleyaw_imu_;
-        double angletar_imu_;
+        double angle_target_imu_;
         std::mutex mtx_imu_;
 
         EventQueue<void>::UniquePtr queue_scan_{ nullptr };

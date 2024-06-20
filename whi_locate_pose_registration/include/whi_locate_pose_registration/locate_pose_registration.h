@@ -12,7 +12,8 @@ All text above must be included in any redistribution.
 
 Changelog:
 2024-05-11: Initial version
-2022-xx-xx: xxx
+2024-06-19: update imu navigation while route vertical
+2024-06-20: modify endpose relative location fixed,add curpose orientation angle
 ******************************************************************/
 #pragma once
 #include <ros/ros.h> 

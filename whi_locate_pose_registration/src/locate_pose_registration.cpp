@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.2" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.3" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -411,13 +411,13 @@ namespace pose_registration_plugins
             angle_target_imu_ = getrightImu(angle_target_imu_);
             updateCurrentPose();
 
-            distance_horizon_ = fabs(target_rela_pose_[1]) - leftorright_ * pose_feature_.position.x;    // mark here by zhouyue
-            distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.y;
+            distance_horizon_ = fabs(target_rela_pose_[1]) - leftorright_ * pose_feature_.position.y;    // mark here by zhouyue
+            distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.x;
             get_align_imu_ = yawFromImu;
             get_align_angle_ = angleBaselink;
             geometry_msgs::Pose relapos;
             relapos.position.x = distance_vertical_;
-            relapos.position.y = target_rela_pose_[1] - pose_feature_.position.x;
+            relapos.position.y = target_rela_pose_[1] - pose_feature_.position.y;
             relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
 
             //pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);

@@ -15,6 +15,7 @@ Changelog:
 2024-06-19: update imu navigation while route vertical
 2024-06-20: modify endpose relative location fixed ;add curpose orientation angle ;
             modify  STA_ADJUST_VERTICAL to STA_WAIT_SCAN
+2024-06-21: featurepose getinitvertical and horizon Reverse order
 ******************************************************************/
 #pragma once
 #include <ros/ros.h> 

@@ -39,6 +39,7 @@ namespace pose_registration_plugins
         std::vector<double> cur_pose;
         std::vector<double> feature_pose;
         std::vector<double> target_rela_pose;
+        int imu_navi;
     };
 
     enum State

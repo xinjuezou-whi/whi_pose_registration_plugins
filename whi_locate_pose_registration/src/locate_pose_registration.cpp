@@ -437,8 +437,24 @@ namespace pose_registration_plugins
             ROS_INFO("STA_PRE_HORIZON curpose is :[%f, %f ] ,angleBaselink:%f , get_align_imu_: %f",curpose.position.x, curpose.position.y, angleBaselink, get_align_imu_);   
             ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
 
-            state_ = STA_TO_HORIZON;
-            ROS_INFO("STA_PRE_HORIZON finish,  start STA_TO_HORIZON "); 
+            if (fabs(target_rela_pose_[1]) < 0.001)
+            {
+                relapos.position.x = distance_vertical_;
+                relapos.position.y = 0;
+                relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
+                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
+                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
+                state_ = STA_ROUTE_VERTICAL;
+                ROS_INFO("STA_PRE_HORIZON finish, target_rela_pose_[1] =0 ,  start STA_ROUTE_VERTICAL "); 
+
+            }
+            else
+            {
+                state_ = STA_TO_HORIZON;
+                ROS_INFO("STA_PRE_HORIZON finish,  start STA_TO_HORIZON "); 
+            }
+
         }
         else if (state_ == STA_TO_HORIZON)
         {

@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.3" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.4" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 

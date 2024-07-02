@@ -30,16 +30,24 @@ Changelog:
 #include <mutex>
 #include <thread>
 #include <condition_variable>
+#include <deque>
 
 namespace pose_registration_plugins
 {
+
+    struct TargetRelaPose
+    {
+        std::vector<double> target_rela_pose;
+        std::string direction = "direct";
+    };
+
     struct FeatureConfig
     {
         std::string name;
         std::vector<double> cur_pose;
         std::vector<double> feature_pose;
-        std::vector<double> target_rela_pose;
-        int imu_navi;
+        std::deque<TargetRelaPose> target_rela_pose_vec;
+        int using_inertial;
     };
 
     enum State
@@ -63,6 +71,7 @@ namespace pose_registration_plugins
         STA_ROUTE_VERTICAL,
         STA_PRE_ORIENTATION,
         STA_TO_ORIENTATION,
+        STA_PRE_NEXT,
         STA_DONE,
         STA_FAILED,
         STA_WAIT_SCAN,
@@ -115,6 +124,8 @@ namespace pose_registration_plugins
         double inertial_rotvel_{ 0.25 };
         double inertial_xyvel_{ 0.04 };
         std::vector<double> target_rela_pose_ ;
+        std::deque<TargetRelaPose> target_rela_pose_vec_;
+        std::string route_vertical_direct_;
         int leftorright_{ 1 };
         std::string model_cloud_path_;
         std::vector<FeatureConfig> features_config_;
@@ -132,6 +143,7 @@ namespace pose_registration_plugins
         double rotvel_{ 0.2 };
         std::vector<float> ndtsample_coeffs_;
         int ndtmaxiter_;
+        int operate_index_{ -1 };
         std::string segment_type_{ "region_growing" };
         std::string mapframe_;
         std::string laser_frame_;

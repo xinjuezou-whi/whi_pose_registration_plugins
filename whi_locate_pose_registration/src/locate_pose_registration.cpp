@@ -792,7 +792,7 @@ namespace pose_registration_plugins
             {
                 targetYaw += M_PI;
                 ROS_INFO("in cal,inverse targetYaw is : %f",targetYaw);
-                get_align_imu_ = yawFromImu + M_PI;
+                get_align_imu_ = get_align_imu_ + M_PI;
                 get_align_angle_ = get_align_angle_ + M_PI  ; 
                 get_align_imu_ = getrightImu(get_align_imu_);               
             }
@@ -1082,7 +1082,7 @@ namespace pose_registration_plugins
             angle_target_imu_ = yawFromImu + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle;   
             angle_target_imu_ = getrightImu(angle_target_imu_);
             state_ = STA_TO_ORIENTATION;    
-            ROS_INFO(" STA_PRE_ORIENTATION finish ,to sta STA_TO_ORIENTATION ");       
+            ROS_INFO(" STA_PRE_ORIENTATION finish ,to sta STA_TO_ORIENTATION ,angle_target_imu_ = %f ",angle_target_imu_);       
         }
         else if (state_ == STA_TO_ORIENTATION)
         {
@@ -1095,7 +1095,7 @@ namespace pose_registration_plugins
             {
                 // angleDiff = angle_target_imu_ - yawFromImu;
                 angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-                if (debug_count_ == 5)
+                if (debug_count_ == 7)
                 {
                     ROS_INFO("in state STA_TO_ORIENTATION, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f",
                         angle_target_imu_, yawFromImu, angleDiff);
@@ -1103,10 +1103,10 @@ namespace pose_registration_plugins
             }
             else
             {
-                if (debug_count_ == 5)
+                if (debug_count_ == 7)
                 {
-                    ROS_INFO("in state STA_TO_ORIENTATION, angle_target_imu_ = %f, angleDiff = %f",
-                        angle_target_imu_, angleDiff);
+                    ROS_INFO("in state STA_TO_ORIENTATION, pose_target_angle = %f, curbaselinkangle = %f,angleDiff = %f",
+                        PoseUtilities::toEuler(pose_target_.orientation)[2],PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], angleDiff);
                 }
             }              
             if (fabs(angleDiff) < yaw_tolerance_)

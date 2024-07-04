@@ -205,6 +205,9 @@ namespace pose_registration_plugins
         // event queue for laser scan
         queue_scan_ = std::make_unique<EventQueue<void>>(10, false);
         threadRegistration();
+
+        packpath_ = ros::package::getPath("whi_locate_pose_registration");
+        ROS_INFO("packpath is :%s",packpath_.c_str());
     }
 
     void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
@@ -561,8 +564,8 @@ namespace pose_registration_plugins
 
             distance_horizon_ = fabs(target_rela_pose_[1]);    // mark here by zhouyue
             distance_vertical_ = fabs(target_rela_pose_[0]);
-            get_align_imu_ = yawFromImu;
-            get_align_angle_ = angleBaselink;
+            //get_align_imu_ = yawFromImu;
+            //get_align_angle_ = angleBaselink;
             geometry_msgs::Pose relapos;
             relapos.position.x = target_rela_pose_[0];
             relapos.position.y = target_rela_pose_[1];
@@ -571,11 +574,12 @@ namespace pose_registration_plugins
             geometry_msgs::Pose curpose;
             curpose.position.x = transBaselinkMap.transform.translation.x;
             curpose.position.y = transBaselinkMap.transform.translation.y;  
-
+            geometry_msgs::Pose last_pose_end;
+            last_pose_end = pose_end_;
             geometry_msgs::TransformStamped trans = transBaselinkMap;
             trans.transform.translation.x = pose_end_.position.x;
             trans.transform.translation.y = pose_end_.position.y;
-            //trans.transform.rotation = pose_end_.orientation;
+            //trans.transform.rotation = getfea_cur_pose_.orientation;
             //getfea_cur_pose_.orientation.w = 1.0;
             pose_end_ = PoseUtilities::applyTransform(relapos, trans);
 
@@ -598,14 +602,18 @@ namespace pose_registration_plugins
             }
             else if (fabs(target_rela_pose_[1]) < 0.001)
             {
-                relapos.position.x = target_rela_pose_[0];
+                relapos.position.x = (route_vertical_direct_ == "inverse")? (-1 * target_rela_pose_[0]) : target_rela_pose_[0];
                 relapos.position.y = 0;
                 relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
+                geometry_msgs::TransformStamped subtrans = transBaselinkMap;
+                subtrans.transform.translation.x = last_pose_end.position.x;
+                subtrans.transform.translation.y = last_pose_end.position.y;
+                subtrans.transform.rotation = getfea_cur_pose_.orientation;
+                pose_end_ = PoseUtilities::applyTransform(relapos, subtrans);
                 vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
                 vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
                 state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                ROS_INFO("STA_PRE_NEXT finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL "); 
+                ROS_INFO("STA_PRE_NEXT finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f,%f] ",pose_end_.position.x, pose_end_.position.y); 
 
             }
             else
@@ -779,10 +787,20 @@ namespace pose_registration_plugins
             auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
             auto vecForward = PoseUtilities::createVector2D(pntCur,pntForward);
             double targetYaw = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
+            ROS_INFO("in cal targetYaw is : %f",targetYaw);
             if (route_vertical_direct_ == "inverse")
+            {
                 targetYaw += M_PI;
+                ROS_INFO("in cal,inverse targetYaw is : %f",targetYaw);
+                get_align_imu_ = yawFromImu + M_PI;
+                get_align_angle_ = get_align_angle_ + M_PI  ; 
+                get_align_imu_ = getrightImu(get_align_imu_);               
+            }
             ROS_INFO("targetYaw = %f, curYaw = %f", targetYaw, PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2]);
             pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, targetYaw);
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            ROS_INFO("angleDiff = %f",angleDiff);
             state_ = STA_ROT_ROUTE_VERTICAL;
         }  
         else if (state_ == STA_ROT_ROUTE_VERTICAL)
@@ -1064,7 +1082,7 @@ namespace pose_registration_plugins
             angle_target_imu_ = yawFromImu + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle;   
             angle_target_imu_ = getrightImu(angle_target_imu_);
             state_ = STA_TO_ORIENTATION;    
-            ROS_INFO(" STA_TO_ORIENTATION finish ,to sta STA_TO_ORIENTATION ");       
+            ROS_INFO(" STA_PRE_ORIENTATION finish ,to sta STA_TO_ORIENTATION ");       
         }
         else if (state_ == STA_TO_ORIENTATION)
         {
@@ -1350,7 +1368,7 @@ namespace pose_registration_plugins
         {
             state_ = STA_FAILED;
             std::string outfile;
-            outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetall.pcd";
+            outfile = packpath_ + "/pcd/testgetall.pcd";
             pcl::io::savePCDFileASCII (outfile, *pclCloud);                 
             ROS_INFO(" segment_don , get none features , check config or condition");
             return nullptr;
@@ -1500,9 +1518,9 @@ namespace pose_registration_plugins
         {
             ROS_INFO("debug_count_ == 1 or 3 ,outfile");
             std::string outfile;
-            outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetseg.pcd";
+            outfile = packpath_ + "/pcd/testgetseg.pcd";
             pcl::io::savePCDFileASCII (outfile, *minoutcloud);
-            outfile = "/home/nvidia/catkin_workspace/src/whi_pose_registration_plugins/whi_locate_pose_registration/pcd/testgetall.pcd";
+            outfile = packpath_ + "/pcd/testgetall.pcd";
             pcl::io::savePCDFileASCII (outfile, *pclCloud); 
 
             if (debug_count_ == 1)

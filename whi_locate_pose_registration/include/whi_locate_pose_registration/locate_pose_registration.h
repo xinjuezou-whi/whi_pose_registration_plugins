@@ -183,6 +183,7 @@ namespace pose_registration_plugins
         std::mutex mtx_cv_;
         std::atomic<bool> terminated_{ false };
 
+        std::string packpath_;
         int debug_count_{ 0 };
     };
 } // namespace pose_registration_plugins

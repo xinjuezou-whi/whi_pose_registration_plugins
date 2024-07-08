@@ -64,6 +64,9 @@ namespace pose_registration_plugins
         STA_ADJUST_VERTICAL,
         STA_PRE_HORIZON,
         STA_TO_HORIZON,
+        STA_PRE_ROT_ROUTE_HORIZON,
+        STA_ROT_ROUTE_HORIZON,
+        STA_PRE_ROUTE_HORIZON,
         STA_ROUTE_HORIZON,
         STA_PRE_VERTICAL,
         STA_TO_VERTICAL,
@@ -101,6 +104,7 @@ namespace pose_registration_plugins
         void threadRegistration();
 
     private:
+        bool is_fixed_location_;
         geometry_msgs::Pose pose_feature_;
         geometry_msgs::Pose pose_arrive_;
         geometry_msgs::Pose pose_standby_;
@@ -118,6 +122,8 @@ namespace pose_registration_plugins
         double predict_dist_thresh_;
         double get_align_imu_{ 0.0 };
         double get_align_angle_{ 0.0 };
+        double get_horizon_imu_{ 0.0 };
+        double get_horizon_angle_{ 0.0 };        
         geometry_msgs::Pose vertical_start_pose_;
         double horizon_offset_vel_{ 0.1 };
         double vertical_to_rotvel_{ 0.1 };

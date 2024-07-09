@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.4" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.5" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -550,9 +550,11 @@ namespace pose_registration_plugins
         }
         else if (state_ == STA_PRE_NEXT)
         {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+
             if (target_rela_pose_vec_.empty())
             {
-                ROS_INFO(" in STA_PRE_NEXT ,  arrive done ");
+                ROS_INFO(" in STA_PRE_NEXT ,  arrive done ,now curpose is: [ %f, %f ] ",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y);
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
                 state_ = STA_DONE;
@@ -574,7 +576,6 @@ namespace pose_registration_plugins
             }            
             target_rela_pose_vec_.pop_front();
 
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + leftorright_ * 0.5 * M_PI);
             angle_target_imu_ = yawFromImu + leftorright_ * 0.5 * M_PI;       
@@ -955,6 +956,7 @@ namespace pose_registration_plugins
         }
         else if (state_ == STA_PRE_VERTICAL)
         {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
             if (distance_vertical_ < 0.001 )
             {
                 state_ = STA_PRE_NEXT;
@@ -962,7 +964,6 @@ namespace pose_registration_plugins
                 return ;
             }
 
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_target_.position.x = 0.0;
             pose_target_.position.y = 0.0;

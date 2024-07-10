@@ -197,11 +197,15 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/feature_min_size", feature_min_size_, 10);
         node_handle_->param("pose_registration/LocatePose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/LocatePose/ndt_maxiter", ndtmaxiter_, 5000);
+        node_handle_->param("pose_registration/LocatePose/odom_topic", odom_topic_, std::string("odom"));
+
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
 		    imuTopic, 10, std::bind(&LocatePoseRegistration::subCallbackImu, this, std::placeholders::_1)));
 
+        odom_sub_ = std::make_unique<ros::Subscriber>(
+          node_handle_->subscribe<nav_msgs::Odometry>(odom_topic_, 1, boost::bind(&LocatePoseRegistration::odomCallback, this, _1)) );
         // event queue for laser scan
         queue_scan_ = std::make_unique<EventQueue<void>>(10, false);
         threadRegistration();
@@ -640,8 +644,18 @@ namespace pose_registration_plugins
                 vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
                 vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
                 prestate_ = state_;
-                state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                ROS_INFO("STA_PRE_NEXT finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f,%f] ",pose_end_.position.x, pose_end_.position.y); 
+                //state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                if (!using_inertial_)
+                {
+                    state_ = STA_ROUTE_VERTICAL;
+                    ROS_INFO("!using_inertial, direct to STA_ROUTE_VERTICAL ");
+                }
+                else
+                {
+                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                    ROS_INFO("using_inertial,  STA_PRE_ROT_ROUTE_VERTICAL ");
+                    ROS_INFO("STA_PRE_NEXT finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f,%f] ",pose_end_.position.x, pose_end_.position.y); 
+                }                
 
             }
             else
@@ -682,10 +696,20 @@ namespace pose_registration_plugins
                 CmdVel.angular.z = 0.0;
 
                 prestate_ = state_;
-                state_ = STA_PRE_ROT_ROUTE_HORIZON;
-                updateCurrentPose(); 
                 ROS_INFO("sta_to_horizon finish, yawFromImu = %f", yawFromImu);
-                ROS_INFO("STA_TO_HORIZON finish ");
+                if (!using_inertial_)
+                {
+                    state_ = STA_ROUTE_HORIZON;
+                    ROS_INFO("!using_inertial_ , direct to  STA_ROUTE_HORIZON");
+
+                }
+                else
+                {
+                    state_ = STA_PRE_ROT_ROUTE_HORIZON;
+                    ROS_INFO("using_inertial_ , to  STA_PRE_ROT_ROUTE_HORIZON");
+                }
+                updateCurrentPose(); 
+
             }
             else
             {
@@ -967,10 +991,11 @@ namespace pose_registration_plugins
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             pose_target_.position.x = 0.0;
             pose_target_.position.y = 0.0;
-            //pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - leftorright_ * 0.5 * M_PI);
-            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_); 
-            // angle_target_imu_ = yawFromImu - leftorright_ * 0.5 * M_PI;
-            angle_target_imu_ = getrightImu(get_align_imu_);
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - leftorright_ * 0.5 * M_PI);
+            //pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_); 
+            angle_target_imu_ = yawFromImu - leftorright_ * 0.5 * M_PI;
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            //angle_target_imu_ = getrightImu(get_align_imu_);
             ROS_INFO("in state STA_PRE_VERTICAL finish, angle_target_imu_ = %f, yawFromImu = %f",
                 angle_target_imu_, yawFromImu);
             //进入第二条路径，更改当前点为起始点
@@ -1010,8 +1035,18 @@ namespace pose_registration_plugins
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
                 prestate_ = state_;
-                state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                ROS_INFO("STA_TO_VERTICAL finish ,start STA_PRE_ROT_ROUTE_VERTICAL ");
+                //state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                if (!using_inertial_)
+                {
+                    state_ = STA_ROUTE_VERTICAL;
+                    ROS_INFO("STA_TO_VERTICAL finish ,direct to STA_ROUTE_VERTICAL ");
+                }
+                else
+                {
+                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                    ROS_INFO("STA_TO_VERTICAL finish ,start STA_PRE_ROT_ROUTE_VERTICAL ");
+                }
+                updateCurrentPose(); 
 
             }
             else
@@ -1893,6 +1928,27 @@ namespace pose_registration_plugins
                 }
             }
         };
+    }
+
+    void LocatePoseRegistration::odomCallback(const nav_msgs::Odometry::ConstPtr& Odom)
+    {
+        ROS_INFO_STREAM_ONCE("Odometry received on topic " << odom_topic_);
+        // we assume that the odometry is published in the frame of the base
+        //boost::mutex::scoped_lock lock(odom_mutex_);
+        base_odom_ = *Odom;
+        if (base_odom_.header.stamp.isZero())
+            base_odom_.header.stamp = ros::Time::now();
+        //ROS_INFO("base_odom. pose,position is:[%f,%f]",Odom->pose.pose.position.x,Odom->pose.pose.position.y);
+        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
+        geometry_msgs::Pose pointpose;
+        pointpose.position.x = Odom->pose.pose.position.x;
+        pointpose.position.y = Odom->pose.pose.position.y;
+        pointpose.position.z = Odom->pose.pose.position.z;
+        pointpose.orientation = Odom->pose.pose.orientation;
+        auto aftertrans_pose = PoseUtilities::applyTransform(pointpose, transBaselinkMap);
+        //ROS_INFO("getpose is :[%f,%f]",aftertrans_pose.position.x,aftertrans_pose.position.y);
+        //ROS_INFO("cur tfpose is:[%f,%f]",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y);
+
     }
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::LocatePoseRegistration, whi_pose_registration::BasePoseRegistration)

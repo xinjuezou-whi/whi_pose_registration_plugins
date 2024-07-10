@@ -31,6 +31,7 @@ Changelog:
 #include <thread>
 #include <condition_variable>
 #include <deque>
+#include <nav_msgs/Odometry.h>
 
 namespace pose_registration_plugins
 {
@@ -102,6 +103,7 @@ namespace pose_registration_plugins
         double getrightImu(double angletar);
         std::shared_ptr<void> registration(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void threadRegistration();
+        void odomCallback(const nav_msgs::Odometry::ConstPtr& msg);
 
     private:
         bool is_fixed_location_;
@@ -188,6 +190,10 @@ namespace pose_registration_plugins
         std::condition_variable cv_;
         std::mutex mtx_cv_;
         std::atomic<bool> terminated_{ false };
+
+        std::string odom_topic_;
+        std::unique_ptr<ros::Subscriber> odom_sub_;
+        nav_msgs::Odometry base_odom_;
 
         std::string packpath_;
         int debug_count_{ 0 };

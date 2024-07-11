@@ -198,6 +198,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/LocatePose/ndt_maxiter", ndtmaxiter_, 5000);
         node_handle_->param("pose_registration/LocatePose/odom_topic", odom_topic_, std::string("odom"));
+        node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);
 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
@@ -259,21 +260,21 @@ namespace pose_registration_plugins
                         distance_todrive_ = distance_vertical_;
                         state_ = STA_ADJUST_VERTICAL;
 
-                        ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ");
+                        ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ,distance_todrive_=%f ",distance_todrive_);
                     }
                     else
                     {
                         state_ = STA_PRE_ROT_ANGLE;
+                        ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
                     }
                     updateCurrentPose(); 
 
-                    ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
                     ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
                 }
                 else if (prestate_ == STA_REGISTRATE)
                 {
                     state_ = STA_WAIT_SCAN;
-                    ROS_INFO("vertical finish, wait scan");
+                    ROS_INFO("STA_REGISTRATE finish, wait scan");
                 }
             }
             else
@@ -789,7 +790,15 @@ namespace pose_registration_plugins
                 geometry_msgs::Pose curpose;
                 curpose.position.x = transBaselinkMap.transform.translation.x;
                 curpose.position.y = transBaselinkMap.transform.translation.y;
-                double routedis = PoseUtilities::distance(curpose,pose_standby_);
+                double routedis = 0.0;
+                if (using_odom_pose_)
+                {
+                    routedis = PoseUtilities::distance(get_pose_odom_,pose_standby_odom_);
+                }
+                else
+                {
+                    routedis = PoseUtilities::distance(curpose,pose_standby_);
+                }
                 double extradis = fabs(distance_horizon_) + 0.3;
                 double distDiff = fabs(distance_horizon_) - routedis;
                 //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
@@ -1161,7 +1170,15 @@ namespace pose_registration_plugins
                 geometry_msgs::Pose curpose;
                 curpose.position.x = transBaselinkMap.transform.translation.x;
                 curpose.position.y = transBaselinkMap.transform.translation.y;
-                double routedis = PoseUtilities::distance(curpose,pose_standby_);
+                double routedis = 0.0;
+                if (using_odom_pose_)
+                {
+                    routedis = PoseUtilities::distance(get_pose_odom_,pose_standby_odom_);
+                }
+                else
+                {
+                    routedis = PoseUtilities::distance(curpose,pose_standby_);
+                }                
                 double extradis = fabs(distance_vertical_) + 0.3;
                 double distDiff = fabs(distance_vertical_) - routedis;
                 //第二条路径行驶距离超出计算值 30cm ；偏差过大，说明前面有问题
@@ -1586,6 +1603,9 @@ namespace pose_registration_plugins
         geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
         pose_standby_.position.x = transBaselinkMap.transform.translation.x;    
         pose_standby_.position.y = transBaselinkMap.transform.translation.y; 
+
+        pose_standby_odom_.position.x = get_pose_odom_.position.x;
+        pose_standby_odom_.position.y = get_pose_odom_.position.y;
     }
 
     void LocatePoseRegistration::subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser)
@@ -1945,6 +1965,8 @@ namespace pose_registration_plugins
         pointpose.position.y = Odom->pose.pose.position.y;
         pointpose.position.z = Odom->pose.pose.position.z;
         pointpose.orientation = Odom->pose.pose.orientation;
+        get_pose_odom_.position.x = Odom->pose.pose.position.x;
+        get_pose_odom_.position.y = Odom->pose.pose.position.y;
         auto aftertrans_pose = PoseUtilities::applyTransform(pointpose, transBaselinkMap);
         //ROS_INFO("getpose is :[%f,%f]",aftertrans_pose.position.x,aftertrans_pose.position.y);
         //ROS_INFO("cur tfpose is:[%f,%f]",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y);

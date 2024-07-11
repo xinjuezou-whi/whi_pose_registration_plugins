@@ -110,6 +110,9 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_feature_;
         geometry_msgs::Pose pose_arrive_;
         geometry_msgs::Pose pose_standby_;
+        geometry_msgs::Pose pose_standby_odom_;
+        geometry_msgs::Pose get_pose_odom_;
+        bool using_odom_pose_;
         geometry_msgs::Pose feature_cur_pose_;
         double pattern_met_location_thresh_{ 0.5 };
         double pattern_met_radius_thresh_{ 0.05 };

@@ -40,6 +40,7 @@ namespace pose_registration_plugins
     {
         std::vector<double> target_rela_pose;
         std::string direction = "direct";
+        int using_inertial;
     };
 
     struct FeatureConfig
@@ -48,7 +49,6 @@ namespace pose_registration_plugins
         std::vector<double> cur_pose;
         std::vector<double> feature_pose;
         std::deque<TargetRelaPose> target_rela_pose_vec;
-        int using_inertial;
     };
 
     enum State
@@ -128,11 +128,15 @@ namespace pose_registration_plugins
         double get_align_imu_{ 0.0 };
         double get_align_angle_{ 0.0 };
         double get_horizon_imu_{ 0.0 };
-        double get_horizon_angle_{ 0.0 };        
+        double get_horizon_angle_{ 0.0 };   
+        double get_horizon_direct_imu_{ 0.0 };     
         geometry_msgs::Pose vertical_start_pose_;
         double horizon_offset_vel_{ 0.1 };
         double vertical_to_rotvel_{ 0.1 };
+        double imu_adjust_rot_vel_{ 0.01 };
+        double imu_adjust_rot_thresh_{ 0.02 };
         bool using_inertial_{ true };
+        bool horizon_test_{ true };
         double inertial_rotvel_{ 0.25 };
         double inertial_xyvel_{ 0.04 };
         std::vector<double> target_rela_pose_ ;

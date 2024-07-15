@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.5" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.6" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -59,17 +59,12 @@ namespace pose_registration_plugins
             for (const auto &it : featurenode) 
             {
                 FeatureConfig onefeature;
-                onefeature.using_inertial = 1;
                 for (const auto &pair : it) 
                 {
                     if (pair.first.as<std::string>() == "name")
                     {
                         onefeature.name = pair.second.as<std::string>();
-                    }
-                    if (pair.first.as<std::string>() == "using_inertial")
-                    {
-                        onefeature.using_inertial = pair.second.as<int>();
-                    }                            
+                    }                         
                     if (pair.first.as<std::string>() == "cur_pose")
                     {
                         for (const auto& item : pair.second)
@@ -105,6 +100,11 @@ namespace pose_registration_plugins
                                 {
                                     onetarget_rela_pose.direction = subpair.second.as<std::string>();
                                 }
+                                onetarget_rela_pose.using_inertial = 0;
+                                if (subpair.first.as<std::string>() == "using_inertial")
+                                {
+                                    onetarget_rela_pose.using_inertial = subpair.second.as<int>();
+                                }                                   
                             }
                             onefeature.target_rela_pose_vec.push_back(onetarget_rela_pose);
 
@@ -124,6 +124,7 @@ namespace pose_registration_plugins
                 for (auto onepose : (*oneiter).target_rela_pose_vec )
                 {
                     printf("target_rela_pose: [%f, %f, %f]",onepose.target_rela_pose[0],onepose.target_rela_pose[1],onepose.target_rela_pose[2]);
+                    printf("using_inertial: %d", onepose.using_inertial);
                     printf("direction: %s \n",onepose.direction.c_str());
                 }
 
@@ -198,8 +199,9 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/LocatePose/ndt_maxiter", ndtmaxiter_, 5000);
         node_handle_->param("pose_registration/LocatePose/odom_topic", odom_topic_, std::string("odom"));
-        node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);
-
+        node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);  
+        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_vel", imu_adjust_rot_vel_, 0.01);   //
+        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_thresh", imu_adjust_rot_thresh_, 0.02); 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
@@ -213,6 +215,7 @@ namespace pose_registration_plugins
 
         packpath_ = ros::package::getPath("whi_locate_pose_registration");
         ROS_INFO("packpath is :%s",packpath_.c_str());
+        horizon_test_ = true;
     }
 
     void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)
@@ -440,7 +443,7 @@ namespace pose_registration_plugins
             }
         }
         else if (state_ == STA_PRE_HORIZON)
-        {
+        {  
             if (target_rela_pose_vec_.empty())
             {
                 ROS_INFO(" in STA_PRE_HORIZON, target_rela_pose_vec_ is empty , done ");
@@ -454,7 +457,8 @@ namespace pose_registration_plugins
             target_rela_pose_[0] = front_target_rela.target_rela_pose[0];
             target_rela_pose_[1] = front_target_rela.target_rela_pose[1];
             target_rela_pose_[2] = front_target_rela.target_rela_pose[2];  
-            route_vertical_direct_ = front_target_rela.direction;          
+            route_vertical_direct_ = front_target_rela.direction;     
+            using_inertial_ = front_target_rela.using_inertial;     
             if (PoseUtilities::signOf(target_rela_pose_[1]) == 0 )
             {
                 leftorright_ = 1;
@@ -507,11 +511,15 @@ namespace pose_registration_plugins
                 }
                 else
                 {
-                    pose_end_.position.x = getfea_cur_pose_.position.x;
-                    pose_end_.position.y = getfea_cur_pose_.position.y;
-                    state_ = STA_PRE_ORIENTATION;
-                    ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
-                    ROS_INFO(" target_rela_pose_[2] > 0, start STA_PRE_ORIENTATION ");
+                    {
+                        pose_end_.position.x = getfea_cur_pose_.position.x;
+                        pose_end_.position.y = getfea_cur_pose_.position.y;
+                        state_ = STA_PRE_ORIENTATION;
+                        ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
+                        ROS_INFO(" target_rela_pose_[2] > 0, start STA_PRE_ORIENTATION ");
+
+                    }
+
                 }
             }
             else if (fabs(target_rela_pose_[1]) < 0.001)
@@ -559,7 +567,7 @@ namespace pose_registration_plugins
 
             if (target_rela_pose_vec_.empty())
             {
-                ROS_INFO(" in STA_PRE_NEXT ,  arrive done ,now curpose is: [ %f, %f ] ",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y);
+                ROS_INFO(" in STA_PRE_NEXT ,  arrive done ,now curpose is: [ %f, %f ] , yawFromImu is:%f ",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y,yawFromImu);
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
                 state_ = STA_DONE;
@@ -570,7 +578,8 @@ namespace pose_registration_plugins
             target_rela_pose_[0] = front_target_rela.target_rela_pose[0];
             target_rela_pose_[1] = front_target_rela.target_rela_pose[1];
             target_rela_pose_[2] = front_target_rela.target_rela_pose[2];  
-            route_vertical_direct_ = front_target_rela.direction;          
+            route_vertical_direct_ = front_target_rela.direction;     
+            using_inertial_ = front_target_rela.using_inertial;      
             if (PoseUtilities::signOf(target_rela_pose_[1]) == 0 )
             {
                 leftorright_ = 1;
@@ -698,7 +707,7 @@ namespace pose_registration_plugins
 
                 prestate_ = state_;
                 ROS_INFO("sta_to_horizon finish, yawFromImu = %f", yawFromImu);
-                if (!using_inertial_)
+                if (!using_inertial_ || horizon_test_)
                 {
                     state_ = STA_ROUTE_HORIZON;
                     ROS_INFO("!using_inertial_ , direct to  STA_ROUTE_HORIZON");
@@ -710,7 +719,7 @@ namespace pose_registration_plugins
                     ROS_INFO("using_inertial_ , to  STA_PRE_ROT_ROUTE_HORIZON");
                 }
                 updateCurrentPose(); 
-
+                get_horizon_direct_imu_ = yawFromImu;
             }
             else
             {
@@ -784,7 +793,8 @@ namespace pose_registration_plugins
         else if (state_ == STA_ROUTE_HORIZON)
         {
             static std::string substate = "direct" ;
-            if (!using_inertial_)
+
+            if (!using_inertial_ || horizon_test_)
             {
                 geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
                 geometry_msgs::Pose curpose;
@@ -820,6 +830,16 @@ namespace pose_registration_plugins
                 {
                     CmdVel.linear.x = PoseUtilities::signOf(distDiff) * horizon_offset_vel_;
                     CmdVel.linear.y = 0.0;
+                    auto imuangleDiff = angles::shortest_angular_distance(yawFromImu, get_horizon_direct_imu_);
+                    ROS_INFO("imuangleDiff is:%f ",imuangleDiff);
+                    if ( fabs(imuangleDiff) > imu_adjust_rot_thresh_ )
+                    {
+                        CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
+                    }
+                    else
+                    {
+                        CmdVel.angular.z = 0 ;
+                    }
                 }
             }
             else
@@ -1411,7 +1431,7 @@ namespace pose_registration_plugins
             angle_target_imu_ = yawFromImu + PoseUtilities::signOf(target_rela_pose_[2]) * rotangle;   
             angle_target_imu_ = getrightImu(angle_target_imu_);
             state_ = STA_TO_ORIENTATION;    
-            ROS_INFO(" STA_PRE_ORIENTATION finish ,to sta STA_TO_ORIENTATION ,angle_target_imu_ = %f ",angle_target_imu_);       
+            ROS_INFO(" STA_PRE_ORIENTATION finish ,to sta STA_TO_ORIENTATION ,yawFromImu = %f ,angle_target_imu_ = %f ",yawFromImu,angle_target_imu_);       
         }
         else if (state_ == STA_TO_ORIENTATION)
         {
@@ -1572,7 +1592,6 @@ namespace pose_registration_plugins
             getfea_cur_pose_.position.x = getfeature.cur_pose[0];
             getfea_cur_pose_.position.y = getfeature.cur_pose[1];
             getfea_cur_pose_.orientation = PoseUtilities::fromEuler(0.0, 0.0, getfeature.cur_pose[2]);
-            using_inertial_ = getfeature.using_inertial;
             ROS_INFO("getfea_cur_pose_.orientation yaw : %f",getfeature.cur_pose[2]);
             /*
             if (PoseUtilities::signOf(target_rela_pose_[1]) == 0 )

@@ -130,6 +130,8 @@ namespace pose_registration_plugins
         double get_horizon_imu_{ 0.0 };
         double get_horizon_angle_{ 0.0 };   
         double get_horizon_direct_imu_{ 0.0 };     
+        double get_vertical_direct_imu_{ 0.0 };
+        double rot_offset_{ 0.0 };
         geometry_msgs::Pose vertical_start_pose_;
         double horizon_offset_vel_{ 0.1 };
         double vertical_to_rotvel_{ 0.1 };

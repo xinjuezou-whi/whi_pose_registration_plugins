@@ -100,10 +100,10 @@ namespace pose_registration_plugins
                                 {
                                     onetarget_rela_pose.direction = subpair.second.as<std::string>();
                                 }
-                                onetarget_rela_pose.using_inertial = 0;
+                                onetarget_rela_pose.using_inertial = false;
                                 if (subpair.first.as<std::string>() == "using_inertial")
                                 {
-                                    onetarget_rela_pose.using_inertial = subpair.second.as<int>();
+                                    onetarget_rela_pose.using_inertial = subpair.second.as<bool>();
                                 }                                   
                             }
                             onefeature.target_rela_pose_vec.push_back(onetarget_rela_pose);
@@ -216,7 +216,7 @@ namespace pose_registration_plugins
 
         packpath_ = ros::package::getPath("whi_locate_pose_registration");
         ROS_INFO("packpath is :%s",packpath_.c_str());
-        horizon_test_ = true;
+        horizon_test_ = false;
     }
 
     void LocatePoseRegistration::computeVelocityCommands(geometry_msgs::Twist& CmdVel)

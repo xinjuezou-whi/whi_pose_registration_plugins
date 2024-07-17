@@ -659,6 +659,7 @@ namespace pose_registration_plugins
                 if (!using_inertial_)
                 {
                     state_ = STA_ROUTE_VERTICAL;
+                    get_vertical_direct_imu_ = yawFromImu;
                     ROS_INFO("!using_inertial, direct to STA_ROUTE_VERTICAL ");
                 }
                 else

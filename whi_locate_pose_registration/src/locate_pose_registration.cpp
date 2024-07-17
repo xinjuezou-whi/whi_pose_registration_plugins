@@ -1241,7 +1241,7 @@ namespace pose_registration_plugins
                     ROS_INFO("imuangleDiff is:%f ",imuangleDiff);
                     if ( fabs(imuangleDiff) > imu_adjust_rot_thresh_ )
                     {
-                        //CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
+                        CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
                     }
                     else
                     {

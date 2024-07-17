@@ -568,11 +568,34 @@ namespace pose_registration_plugins
 
             if (target_rela_pose_vec_.empty())
             {
-                ROS_INFO(" in STA_PRE_NEXT ,  arrive done ,now curpose is: [ %f, %f ] , yawFromImu is:%f ",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y,yawFromImu);
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = 0.0;
-                state_ = STA_DONE;
-                return ;
+                /*
+                static auto preTime = ros::Time::now();
+                auto timeNow = ros::Time::now();
+                static int index = 0;
+
+                if (index == 0)
+                {
+                    preTime = timeNow;
+                    index = 1;
+                }
+                ROS_INFO(" in STA_PRE_NEXT ,test time , yawFromImu = %f ",yawFromImu);
+                
+                if ((timeNow - preTime).toSec() >= 3)
+                */
+               
+                {
+                    //index = 0;
+
+                    ROS_INFO(" in STA_PRE_NEXT ,  arrive done ,now curpose is: [ %f, %f ] , yawFromImu is:%f ",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y,yawFromImu);
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+                    state_ = STA_DONE;
+                    return ;                    
+
+                }
+
+                //return ;        // test end
+
             }
             
             auto front_target_rela = target_rela_pose_vec_.front();
@@ -725,8 +748,18 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                double near_tolerance_ = 0.0;
+                near_tolerance_ = angles::from_degrees(15);
+                if (fabs(angleDiff) < near_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.05;
+                }
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                }
                 if (debug_count_ == 5)
                 {
                     ROS_INFO("angular.z : %f ",CmdVel.angular.z);
@@ -1083,13 +1116,22 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vertical_to_rotvel_;
+                double near_tolerance_ = 0.0;
+                near_tolerance_ = angles::from_degrees(15);
+                if (fabs(angleDiff) < near_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.05;
+                }
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vertical_to_rotvel_;
+                }
                 if (debug_count_ == 5)
                 {
                     ROS_INFO("angular.z : %f ",CmdVel.angular.z);
                 }                
-                //prestate_ = state_;
             }
         }      
         else if (state_ == STA_PRE_ROT_ROUTE_VERTICAL)
@@ -1477,13 +1519,23 @@ namespace pose_registration_plugins
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
                 state_ = STA_PRE_NEXT;
-                ROS_INFO(" STA_TO_ORIENTATION finish , to STA_PRE_NEXT  ");
+                ROS_INFO(" STA_TO_ORIENTATION finish ,yawFromImu =%f , to STA_PRE_NEXT  ",yawFromImu);
             }
             else
             {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
-                prestate_ = state_;
+                double near_tolerance_ = 0.0;
+                near_tolerance_ = angles::from_degrees(15);
+                if (fabs(angleDiff) < near_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.05;
+                }
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vertical_to_rotvel_;
+                    prestate_ = state_;
+                }
             }
         }
         else if (state_ == STA_WAIT_SCAN)

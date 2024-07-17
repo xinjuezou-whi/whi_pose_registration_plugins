@@ -40,7 +40,7 @@ namespace pose_registration_plugins
     {
         std::vector<double> target_rela_pose;
         std::string direction = "direct";
-        int using_inertial;
+        bool using_inertial;
     };
 
     struct FeatureConfig

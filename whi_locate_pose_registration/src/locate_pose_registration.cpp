@@ -65,27 +65,28 @@ namespace pose_registration_plugins
                     {
                         onefeature.name = pair.second.as<std::string>();
                     }                         
-                    if (pair.first.as<std::string>() == "cur_pose")
+                    else if (pair.first.as<std::string>() == "cur_pose")
                     {
                         for (const auto& item : pair.second)
                         {
                             onefeature.cur_pose.push_back(item.as<double>());
                         }
                     }
-                    if (pair.first.as<std::string>() == "feature_pose")
+                    else if (pair.first.as<std::string>() == "feature_pose")
                     {
                         for (const auto& item : pair.second)
                         {
                             onefeature.feature_pose.push_back(item.as<double>());
                         }
                     }
-                    
-                    if (pair.first.as<std::string>() == "target_relative_pose")
+                    else if (pair.first.as<std::string>() == "target_relative_pose")
                     {
                         for (const auto& onepose : pair.second)
                         {
                             TargetRelaPose onetarget_rela_pose;
                             //onefeature.target_rela_pose.push_back(item.as<double>());
+                            onetarget_rela_pose.direction = "direct";
+                            onetarget_rela_pose.using_inertial = false;
                             for(const auto& subpair : onepose)
                             {
                                 if (subpair.first.as<std::string>() == "pose")
@@ -95,13 +96,11 @@ namespace pose_registration_plugins
                                         onetarget_rela_pose.target_rela_pose.push_back(item.as<double>());
                                     }
                                 }
-                                onetarget_rela_pose.direction = "direct";
-                                if (subpair.first.as<std::string>() == "drive_direction")
+                                else if (subpair.first.as<std::string>() == "drive_direction")
                                 {
                                     onetarget_rela_pose.direction = subpair.second.as<std::string>();
                                 }
-                                onetarget_rela_pose.using_inertial = false;
-                                if (subpair.first.as<std::string>() == "using_inertial")
+                                else if (subpair.first.as<std::string>() == "using_inertial")
                                 {
                                     onetarget_rela_pose.using_inertial = subpair.second.as<bool>();
                                 }                                   

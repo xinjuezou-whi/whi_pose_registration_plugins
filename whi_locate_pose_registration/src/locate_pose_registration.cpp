@@ -530,9 +530,20 @@ namespace pose_registration_plugins
                 pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
                 vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
                 vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
-                state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                ROS_INFO("STA_PRE_HORIZON finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL "); 
-                ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
+                if (!using_inertial_)
+                {
+                    state_ = STA_ROUTE_VERTICAL;
+                    get_vertical_direct_imu_ = yawFromImu;
+                    ROS_INFO("at STA_PRE_HORIZON, !using_inertial, direct to STA_ROUTE_VERTICAL ");
+                }
+                else
+                {
+                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                    ROS_INFO("at STA_PRE_HORIZON, using_inertial,  STA_PRE_ROT_ROUTE_VERTICAL ");
+                    ROS_INFO("STA_PRE_HORIZON finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f,%f] ",pose_end_.position.x, pose_end_.position.y); 
+                }    
+                //ROS_INFO("STA_PRE_HORIZON finish, target_rela_pose_[1] =0 ,  start STA_PRE_ROT_ROUTE_VERTICAL "); 
+                //ROS_INFO("pose_end is :[%f, %f ]",pose_end_.position.x, pose_end_.position.y);
 
             }
             else
@@ -710,7 +721,7 @@ namespace pose_registration_plugins
             {
                 // angleDiff = angle_target_imu_ - yawFromImu;
                 angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-                if (debug_count_ == 5)
+                if (debug_count_ == 7)
                 {
                     ROS_INFO("in state STA_TO_HORIZON, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f",
                         angle_target_imu_, yawFromImu, angleDiff );
@@ -718,7 +729,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                if (debug_count_ == 5)
+                if (debug_count_ == 7)
                 {
                     ROS_INFO("in state STA_TO_HORIZON, angle_target_imu_ = %f, angleDiff = %f",
                         angle_target_imu_, angleDiff);

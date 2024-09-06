@@ -202,6 +202,14 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);  
         node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_vel", imu_adjust_rot_vel_, 0.01);   //
         node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_thresh", imu_adjust_rot_thresh_, 0.02); 
+
+        if (!node_handle_->getParam("pose_registration/charge_walk_pose", charge_walk_pose_))
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                charge_walk_pose_.push_back(0.0);
+            }
+        }  
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
@@ -1578,6 +1586,127 @@ namespace pose_registration_plugins
                 }
             }
         }
+        else if (state_ == STA_CHARGE_WALK)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double routedis = PoseUtilities::distance(curpose,pose_standby_);
+            double distance_to = fabs(charge_walk_pose_[0]);
+            double extradis = distance_to + 0.1;
+            double distDiff = distance_to - routedis;
+            //行驶距离超出计算值 10cm ；偏差过大，说明前面对齐失败了
+            if (routedis > extradis)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.linear.y = 0.0;
+                state_ = STA_FAILED;
+                ROS_INFO("fail at STA_CHARGE_WALK ,routedis too far ,  something wrong ");
+            }
+            else if (fabs(distDiff) < xy_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_CHARGE_PRE_ROT;
+                ROS_INFO("STA_CHARGE_WALK finish, start STA_CHARGE_PRE_ROT"); 
+            }
+            else
+            {
+                CmdVel.linear.x = PoseUtilities::signOf(charge_walk_pose_[0]) * PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.y = 0.0;
+            }
+
+        }
+        else if (state_ == STA_CHARGE_PRE_ROT)
+        {
+            if (fabs(charge_walk_pose_[1]) < 0.00001 )
+            {
+                state_ = STA_DONE;
+                ROS_INFO(" arrive done ,sta_done");
+                return ;
+            }
+
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            pose_target_.position.x = 0.0;
+            pose_target_.position.y = 0.0;
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(charge_walk_pose_[0]) * PoseUtilities::signOf(charge_walk_pose_[1]) * 0.5 * M_PI); 
+
+            angle_target_imu_ = yawFromImu + PoseUtilities::signOf(charge_walk_pose_[0]) * PoseUtilities::signOf(charge_walk_pose_[1]) * 0.5 * M_PI;   
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            state_ = STA_CHARGE_ROT;    
+            ROS_INFO(" STA_CHARGE_PRE_ROT finish ,to sta STA_CHARGE_ROT ,yawFromImu = %f ,angle_target_imu_ = %f ",yawFromImu,angle_target_imu_);       
+
+        }
+        else if (state_ == STA_CHARGE_ROT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (issetimu_)
+            {
+                // angleDiff = angle_target_imu_ - yawFromImu;
+                angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+            }
+      
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_CHARGE_HORIZON;
+                updateCurrentPose();
+                ROS_INFO(" STA_CHARGE_ROT finish ,yawFromImu =%f , to STA_CHARGE_HORIZON  ",yawFromImu);
+            }
+            else
+            {
+                double near_tolerance_ = 0.0;
+                near_tolerance_ = angles::from_degrees(15);
+                if (fabs(angleDiff) < near_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.05;
+                }
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vertical_to_rotvel_;
+                    prestate_ = state_;
+                }
+            }
+        }
+        else if (state_ == STA_CHARGE_HORIZON)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double routedis = PoseUtilities::distance(curpose,pose_standby_);
+            double distance_to = fabs(charge_walk_pose_[1]);
+            double extradis = distance_to + 0.1;
+            double distDiff = distance_to - routedis;
+            //行驶距离超出计算值 10cm ；偏差过大，说明前面对齐失败了
+            if (routedis > extradis)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.linear.y = 0.0;
+                state_ = STA_FAILED;
+                ROS_INFO("fail at STA_CHARGE_HORIZON ,routedis too far , something wrong ");
+            }
+            else if (fabs(distDiff) < xy_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_DONE;
+                ROS_INFO("STA_CHARGE_HORIZON finish, start STA_DONE"); 
+            }
+            else
+            {
+                CmdVel.linear.x = PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.y = 0.0;
+            }
+
+        }
         else
         {
             CmdVel.linear.x = 0.0;
@@ -1596,19 +1725,30 @@ namespace pose_registration_plugins
 
     void LocatePoseRegistration::standby(const geometry_msgs::PoseStamped& PatternPose)
     {
-        bool curposeright = checkcurpose();
-        if (curposeright)
+        if (PatternPose.header.frame_id == "charging_logic")
         {
-            prestate_ = STA_START;
-            state_ = STA_WAIT_SCAN;
-            ROS_INFO("in standby");
-            operate_index_ = 0;
+            // charge to walk
+            state_ = STA_CHARGE_WALK;
+            ROS_INFO(" standby , start STA_CHARGE_WALK");
+            updateCurrentPose();
         }
         else
         {
-            state_ = STA_FAILED;
-            ROS_INFO("in standby , but curpose is wrong ,check config or not near the pattern");
+            bool curposeright = checkcurpose();
+            if (curposeright)
+            {
+                prestate_ = STA_START;
+                state_ = STA_WAIT_SCAN;
+                ROS_INFO("in standby");
+                operate_index_ = 0;
+            }
+            else
+            {
+                state_ = STA_FAILED;
+                ROS_INFO("in standby , but curpose is wrong ,check config or not near the pattern");
+            }
         }
+
     }
 
     int LocatePoseRegistration::goalState()

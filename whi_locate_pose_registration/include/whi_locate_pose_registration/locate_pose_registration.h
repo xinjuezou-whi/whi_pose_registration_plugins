@@ -80,7 +80,11 @@ namespace pose_registration_plugins
         STA_DONE,
         STA_FAILED,
         STA_WAIT_SCAN,
-        STA_DEBUG
+        STA_DEBUG,
+        STA_CHARGE_WALK,
+        STA_CHARGE_PRE_ROT,
+        STA_CHARGE_ROT,
+        STA_CHARGE_HORIZON
     };
 
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
@@ -205,6 +209,7 @@ namespace pose_registration_plugins
         nav_msgs::Odometry base_odom_;
 
         std::string packpath_;
+        std::vector<double> charge_walk_pose_;
         int debug_count_{ 0 };
     };
 } // namespace pose_registration_plugins

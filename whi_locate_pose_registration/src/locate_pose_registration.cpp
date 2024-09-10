@@ -356,7 +356,7 @@ namespace pose_registration_plugins
             curpose.position.x = transBaselinkMap.transform.translation.x;
             curpose.position.y = transBaselinkMap.transform.translation.y;
             double routedis = PoseUtilities::distance(curpose,pose_standby_);
-            double extradis = distance_todrive_ + 0.3;
+            double extradis = distance_todrive_ + 0.1;  //0.3
             double distDiff = distance_todrive_ - routedis;
             //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
             if (routedis > extradis)
@@ -426,7 +426,7 @@ namespace pose_registration_plugins
             curpose.position.x = transBaselinkMap.transform.translation.x;
             curpose.position.y = transBaselinkMap.transform.translation.y;
             double routedis = PoseUtilities::distance(curpose, pose_standby_);
-            double extradis = fabs(distance_todrive_) + 0.3;
+            double extradis = fabs(distance_todrive_) + 0.1;
             double distDiff = fabs(distance_todrive_) - routedis;
             //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
             if (routedis > extradis)
@@ -862,7 +862,7 @@ namespace pose_registration_plugins
                 {
                     routedis = PoseUtilities::distance(curpose,pose_standby_);
                 }
-                double extradis = fabs(distance_horizon_) + 0.3;
+                double extradis = fabs(distance_horizon_) + 0.1;
                 double distDiff = fabs(distance_horizon_) - routedis;
                 //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
                 if (routedis > extradis)
@@ -1262,7 +1262,7 @@ namespace pose_registration_plugins
                 {
                     routedis = PoseUtilities::distance(curpose,pose_standby_);
                 }                
-                double extradis = fabs(distance_vertical_) + 0.3;
+                double extradis = fabs(distance_vertical_) + 0.1;
                 double distDiff = fabs(distance_vertical_) - routedis;
                 //第二条路径行驶距离超出计算值 30cm ；偏差过大，说明前面有问题
                 if (routedis > extradis)
@@ -1965,9 +1965,10 @@ namespace pose_registration_plugins
             centerpoint.position.x = center.x;
             centerpoint.position.y = center.y;
             double center_dist = PoseUtilities::distance(originpose,centerpoint);
-            if(center_dist < center_dist_min)
+            double dis_from_feature = fabs(center_dist - pose_feature_.position.x);  // 应该是最接近标志物的距离,从配置中读取的标志物距离
+            if(dis_from_feature < center_dist_min)
             {
-                center_dist_min = center_dist;
+                center_dist_min = dis_from_feature;
                 *outcloud = **oneiter ;
             }
         }
@@ -2008,6 +2009,9 @@ namespace pose_registration_plugins
         if(fabs(delta_radius) > pattern_met_radius_thresh_)
         {
             ROS_INFO("outcloud radius is far from target radius, maybe wrong");
+            std::string outfile;
+            outfile = packpath_ + "/pcd/testgetall.pcd";
+            pcl::io::savePCDFileASCII (outfile, *pclCloud);                     
             state_ = STA_FAILED;
             return nullptr;
         }

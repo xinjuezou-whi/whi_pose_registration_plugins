@@ -882,7 +882,7 @@ public:
                     //*find_cloud = *cloudFeatures;
                     //ROS_INFO("find cloud, ci=%d ",ci);
                 }
-                double score_thres = 3e-4;
+                double score_thres = 5e-4;
                 if (score < score_thres)
                 {
                     outcloudvec.push_back(cloudFeatures);

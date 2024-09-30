@@ -355,9 +355,18 @@ namespace pose_registration_plugins
             geometry_msgs::Pose curpose;
             curpose.position.x = transBaselinkMap.transform.translation.x;
             curpose.position.y = transBaselinkMap.transform.translation.y;
-            double routedis = PoseUtilities::distance(curpose,pose_standby_);
+            double routedis = 0.0;
+            if (using_odom_pose_)
+            {
+                routedis = PoseUtilities::distance(get_pose_odom_,pose_standby_odom_);
+            }
+            else
+            {
+                routedis = PoseUtilities::distance(curpose,pose_standby_);
+            }              
             double extradis = distance_todrive_ + 0.1;  //0.3
             double distDiff = distance_todrive_ - routedis;
+          
             //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
             if (routedis > extradis)
             {
@@ -425,7 +434,15 @@ namespace pose_registration_plugins
             geometry_msgs::Pose curpose;
             curpose.position.x = transBaselinkMap.transform.translation.x;
             curpose.position.y = transBaselinkMap.transform.translation.y;
-            double routedis = PoseUtilities::distance(curpose, pose_standby_);
+            double routedis = 0.0;
+            if (using_odom_pose_)
+            {
+                routedis = PoseUtilities::distance(get_pose_odom_,pose_standby_odom_);
+            }
+            else
+            {
+                routedis = PoseUtilities::distance(curpose,pose_standby_);
+            }              
             double extradis = fabs(distance_todrive_) + 0.1;
             double distDiff = fabs(distance_todrive_) - routedis;
             //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了

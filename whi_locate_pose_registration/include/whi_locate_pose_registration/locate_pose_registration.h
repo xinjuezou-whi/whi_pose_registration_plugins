@@ -159,10 +159,13 @@ namespace pose_registration_plugins
         double feature_angle_;
         double distance_horizon_;
         double distance_vertical_;
+        double registAngle_;
         double distthresh_horizon_;
         double distance_todrive_{ 0.0 };
         double xyvel_{ 0.1 };
         double rotvel_{ 0.2 };
+        double fine_tune_ratio_{ 0.6 };
+        bool is_fine_tune_{ false };
         std::vector<float> ndtsample_coeffs_;
         int ndtmaxiter_;
         int operate_index_{ -1 };

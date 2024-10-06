@@ -172,6 +172,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/wait_scan_time", wait_scan_time_, 0.8);  
         node_handle_->param("pose_registration/LocatePose/is_fixed_location", is_fixed_location_, false); //
         node_handle_->param("pose_registration/LocatePose/rot_offset", rot_offset_, 0.0);  
+        node_handle_->param("pose_registration/LocatePose/fine_tune_ratio", fine_tune_ratio_, 0.6); 
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
@@ -236,62 +237,98 @@ namespace pose_registration_plugins
         
         if (state_ == STA_ALIGN)
         {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
-            // double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
-            //     PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-            double angleDiff = angles::shortest_angular_distance(
-                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2],
-                PoseUtilities::toEuler(pose_target_.orientation)[2]);
-            if (issetimu_)
+            /*
+            if (fabs(registAngle_) < regist_yaw_thresh_)
             {
-                // angleDiff = angle_target_imu_ - yawFromImu;
-                angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-                if (debug_count_ == 5)
+                if (fabs(distance_horizon_) < distthresh_horizon_)
                 {
-                    ROS_INFO("in state STA_ALIGN, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f",
-                        angle_target_imu_, yawFromImu, angleDiff );
+                    distance_todrive_ = distance_vertical_;
+                    state_ = STA_ADJUST_VERTICAL;
+
+                    ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ,distance_todrive_=%f ",distance_todrive_);
+                }                    
+                else
+                {
+                    state_ = STA_PRE_ROT_ANGLE;
+                    ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
                 }
+                updateCurrentPose(); 
+
+                ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
             }
             else
+            */
             {
-                if (debug_count_ == 5)
+                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
+                // double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
+                //     PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                double angleDiff = angles::shortest_angular_distance(
+                    PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2],
+                    PoseUtilities::toEuler(pose_target_.orientation)[2]);
+                if (issetimu_)
                 {
-                    ROS_INFO("in state STA_ALIGN, angle_target_imu_ = %f, angleDiff=%f",
-                        angle_target_imu_, angleDiff );
-                }
-            }        
-            if (fabs(angleDiff) < yaw_tolerance_)
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = 0.0;
-                if (prestate_ == STA_REGISTRATE_FINE)
-                {
-                    if (fabs(distance_horizon_) < distthresh_horizon_)
+                    // angleDiff = angle_target_imu_ - yawFromImu;
+                    angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+                    if (debug_count_ == 5)
                     {
-                        distance_todrive_ = distance_vertical_;
-                        state_ = STA_ADJUST_VERTICAL;
-
-                        ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ,distance_todrive_=%f ",distance_todrive_);
+                        ROS_INFO("in state STA_ALIGN, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f",
+                            angle_target_imu_, yawFromImu, angleDiff );
                     }
-                    else
-                    {
-                        state_ = STA_PRE_ROT_ANGLE;
-                        ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
-                    }
-                    updateCurrentPose(); 
-
-                    ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
                 }
-                else if (prestate_ == STA_REGISTRATE)
+                else
                 {
-                    state_ = STA_WAIT_SCAN;
-                    ROS_INFO("STA_REGISTRATE finish, wait scan");
+                    if (debug_count_ == 5)
+                    {
+                        ROS_INFO("in state STA_ALIGN, angle_target_imu_ = %f, angleDiff=%f",
+                            angle_target_imu_, angleDiff );
+                    }
+                }        
+                if (fabs(angleDiff) < yaw_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+                    if (prestate_ == STA_REGISTRATE_FINE)
+                    {
+                        /*
+                        prestate_ = STA_ALIGN;
+                        state_ = STA_WAIT_SCAN;
+                        ROS_INFO(" STA_ALIGN finish ,back to STA_REGISTRATE_FINE ");
+                        */
+
+                        if (fabs(distance_horizon_) < regist_linear_thresh_ && fabs(distance_vertical_) < regist_linear_thresh_)
+                        {
+                            prestate_ = STA_ALIGN;
+                            state_ = STA_WAIT_SCAN;
+                            ROS_INFO("STA_ALIGN finish , fabs(distance_horizon_) < regist_linear_thresh_ && fabs(distance_vertical_) < regist_linear_thresh_ , start STA_WAIT_SCAN");
+                        }
+                        else if (fabs(distance_horizon_) < distthresh_horizon_)
+                        {
+                            distance_todrive_ = distance_vertical_;
+                            state_ = STA_ADJUST_VERTICAL;
+
+                            ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ,distance_todrive_=%f ",distance_todrive_);
+                        }                    
+                        else
+                        {
+                            state_ = STA_PRE_ROT_ANGLE;
+                            ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
+                        }
+                        updateCurrentPose(); 
+
+                        ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
+                        
+                    }
+                    else if (prestate_ == STA_REGISTRATE)
+                    {
+                        state_ = STA_WAIT_SCAN;
+                        ROS_INFO("STA_REGISTRATE finish, wait scan");
+                    }
                 }
-            }
-            else
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                }
             }
         }
         else if (state_ == STA_PRE_ROT_ANGLE)
@@ -346,7 +383,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if(state_ == STA_BACK)
@@ -384,7 +421,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = -1 * PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.x = is_fine_tune_ ? -1 * PoseUtilities::signOf(distDiff) * xyvel_ * fine_tune_ratio_: -1 * PoseUtilities::signOf(distDiff) * xyvel_;
                 CmdVel.linear.y = 0.0;
             }
         }
@@ -425,7 +462,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if (state_ == STA_ADJUST_VERTICAL)
@@ -463,7 +500,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
+                CmdVel.linear.x = is_fine_tune_ ? PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_ * fine_tune_ratio_ :PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
                 CmdVel.linear.y = 0.0;
             }
         }
@@ -1591,7 +1628,7 @@ namespace pose_registration_plugins
             if ((timeNow - preTime).toSec() >= wait_scan_time_)
             {
                 index = 0;
-                if (prestate_ == STA_REGISTRATE || prestate_ == STA_ADJUST_VERTICAL )
+                if (prestate_ == STA_REGISTRATE || prestate_ == STA_ADJUST_VERTICAL || prestate_ == STA_ALIGN )
                 {
                     state_ = STA_REGISTRATE_FINE;
                     ROS_INFO("start STA_REGISTRATE_FINE ");
@@ -2139,8 +2176,19 @@ namespace pose_registration_plugins
                 return nullptr;
             }
 
+            if (fabs(transxy[0]) < 1.8 * regist_linear_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
+            {
+                is_fine_tune_ = true;
+                ROS_INFO("set is_fine_tune_ true");
+            }
+            else
+            {
+                is_fine_tune_ = false;
+                ROS_INFO("set is_fine_tune_ false");
+            }
+            registAngle_ = registAngles[2];
             // otherwise, rotate to align
-            ROS_INFO("%s", fabs(registAngles[2]) < yaw_tolerance_ ? 
+            ROS_INFO("%s", fabs(registAngles[2]) < regist_yaw_thresh_ ? 
                 std::string(" algin angle met ").c_str() : std::string("algin angle unmet ").c_str());
 
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];

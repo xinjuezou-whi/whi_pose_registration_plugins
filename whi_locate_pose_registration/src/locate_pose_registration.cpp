@@ -454,10 +454,42 @@ namespace pose_registration_plugins
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
+                //modify here 修改这里,优化配准
+                //state_ = STA_ADJUST_VERTICAL;  STA_ADJUST_REGIST
+                prestate_ = state_;
+                state_ = STA_WAIT_SCAN;
+                updateCurrentPose(); 
+                distance_todrive_ = fabs(distance_horizon_) * cos(zig_angle_) + distance_vertical_;          //在这里计算
+                //ROS_INFO("STA_ROT_VERTICAL finish, start STA_ADJUST_VERTICAL, distance_todrive_ =%f", distance_todrive_);
+                ROS_INFO("STA_ROT_VERTICAL finish , prepare for STA_ADJUST_REGIST, cal for distance_todrive_ =%f", distance_todrive_);
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+            }
+        }
+        else if (state_ == STA_ADJUST_AFTER_REGIST)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            // double angleDiff = PoseUtilities::toEuler(pose_target_.orientation)[2] - 
+            //     PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (issetimu_)
+            {
+                // angleDiff = angle_target_imu_ - yawFromImu;
+                angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+            }            
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
                 state_ = STA_ADJUST_VERTICAL;
                 updateCurrentPose(); 
-                distance_todrive_ = fabs(distance_horizon_) * cos(zig_angle_) + distance_vertical_;
-                ROS_INFO("STA_ROT_VERTICAL finish, start STA_ADJUST_VERTICAL, distance_todrive_ =%f", distance_todrive_);
+                //distance_todrive_ = fabs(distance_horizon_) * cos(zig_angle_) + distance_vertical_;
+                //ROS_INFO("STA_ROT_VERTICAL finish, start STA_ADJUST_VERTICAL, distance_todrive_ =%f", distance_todrive_);
+                ROS_INFO("STA_ADJUST_AFTER_REGIST finish ,start STA_ADJUST_VERTICAL,distance_todrive_ =%f", distance_todrive_);
             }
             else
             {
@@ -1638,6 +1670,11 @@ namespace pose_registration_plugins
                     state_ = STA_REGISTRATE;
                     ROS_INFO("start STA_REGISTRATE ");
                 }
+                else if (prestate_ == STA_ROT_VERTICAL)
+                {
+                    state_ = STA_ADJUST_REGIST;
+                    ROS_INFO("start STA_ADJUST_REGIST ");
+                }
             }
         }
         else if (state_ == STA_CHARGE_WALK)
@@ -1905,7 +1942,7 @@ namespace pose_registration_plugins
                 Laser), "registration");
         }
 
-        if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE || state_ == STA_DEBUG)
+        if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE || state_ == STA_DEBUG || state_ == STA_ADJUST_REGIST)
         {
             std::lock_guard<std::mutex> lk(mtx_cv_);
             cv_.notify_all();
@@ -2214,7 +2251,14 @@ namespace pose_registration_plugins
             pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
 
             prestate_ = state_;
-            state_ = STA_ALIGN;
+            if (prestate_ == STA_ADJUST_REGIST)
+            {
+                state_ = STA_ADJUST_AFTER_REGIST;
+            }
+            else
+            {
+                state_ = STA_ALIGN;
+            }
         }
         else
         {

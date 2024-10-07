@@ -62,6 +62,8 @@ namespace pose_registration_plugins
         STA_BACK,
         STA_PRE_ROT_VERTICAL,
         STA_ROT_VERTICAL,
+        STA_ADJUST_REGIST,
+        STA_ADJUST_AFTER_REGIST,
         STA_ADJUST_VERTICAL,
         STA_PRE_HORIZON,
         STA_TO_HORIZON,

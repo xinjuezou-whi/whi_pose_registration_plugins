@@ -173,6 +173,9 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/is_fixed_location", is_fixed_location_, false); //
         node_handle_->param("pose_registration/LocatePose/rot_offset", rot_offset_, 0.0);  
         node_handle_->param("pose_registration/LocatePose/fine_tune_ratio", fine_tune_ratio_, 0.6); 
+        node_handle_->param("pose_registration/LocatePose/rot_back_ratio", rot_back_ratio_, 1.0);   
+        node_handle_->param("pose_registration/LocatePose/lazer_motor_diff", lazer_motor_diff_, 0.412);
+
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
@@ -402,7 +405,7 @@ namespace pose_registration_plugins
                 routedis = PoseUtilities::distance(curpose,pose_standby_);
             }              
             double extradis = distance_todrive_ + 0.1;  //0.3
-            double distDiff = distance_todrive_ - routedis;
+            double distDiff = distance_todrive_ * rot_back_ratio_ - routedis;   // add rot_back_ratio 旋转时候的误差，通过系数补偿
           
             //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
             if (routedis > extradis)
@@ -2155,6 +2158,11 @@ namespace pose_registration_plugins
 
         ROS_INFO("after segment, start registration ......");
         /// registration
+        // 对点云进行平移, 激光中心和车体旋转中心
+        for (int i = 0; i < minoutcloud->points.size(); ++i)
+        {
+            minoutcloud->points[i].x = minoutcloud->points[i].x - lazer_motor_diff_;
+        }
         Eigen::Vector3f registAngles;
         double score;
         std::vector<double> transxy;
@@ -2204,7 +2212,9 @@ namespace pose_registration_plugins
         if (fabs(registAngles[0]) < 0.02 && fabs(registAngles[1]) < 0.02)
         {
             // yaw aligned, move to done or linear alignment if there is
-            if (fabs(transxy[0]) < regist_linear_thresh_ && fabs(transxy[1]) < regist_linear_thresh_ &&
+            double transxyreal = transxy[0] - lazer_motor_diff_;
+            ROS_INFO("transxyreal is: %f",transxyreal);
+            if (fabs(transxyreal) < regist_linear_thresh_ && fabs(transxy[1]) < regist_linear_thresh_ &&
                 fabs(registAngles[2]) < regist_yaw_thresh_)
             {
                 ROS_INFO("align right , next state");
@@ -2213,7 +2223,7 @@ namespace pose_registration_plugins
                 return nullptr;
             }
 
-            if (fabs(transxy[0]) < 1.8 * regist_linear_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
+            if (fabs(transxyreal) < 1.8 * regist_linear_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
             {
                 is_fine_tune_ = true;
                 ROS_INFO("set is_fine_tune_ true");
@@ -2242,7 +2252,7 @@ namespace pose_registration_plugins
             ROS_INFO("start sta_to_horizon, angle_target_imu_ = %f , now yawFromImu = %f",
                 angle_target_imu_, yawFromImu);
 
-            distance_vertical_ = transxy[0];
+            distance_vertical_ = transxy[0] - lazer_motor_diff_;
             distance_horizon_ = transxy[1];
             ROS_INFO("distance_vertical = %f, distance_horizon_ = %f", distance_vertical_, distance_horizon_);
 

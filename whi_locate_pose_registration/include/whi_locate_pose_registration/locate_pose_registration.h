@@ -168,6 +168,8 @@ namespace pose_registration_plugins
         double rotvel_{ 0.2 };
         double fine_tune_ratio_{ 0.6 };
         bool is_fine_tune_{ false };
+        double rot_back_ratio_{ 1.0 };
+        double lazer_motor_diff_{ 0.412 };
         std::vector<float> ndtsample_coeffs_;
         int ndtmaxiter_;
         int operate_index_{ -1 };

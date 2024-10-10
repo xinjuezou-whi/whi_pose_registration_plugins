@@ -155,7 +155,8 @@ namespace pose_registration_plugins
         std::vector<FeatureConfig> features_config_;
         double xy_tolerance_{ 0.02 };
         double yaw_tolerance_{ 0.087 };
-        double regist_linear_thresh_{ 0.03 };
+        double regist_linear_x_thresh_{ 0.03 };
+        double regist_linear_y_thresh_{ 0.03 };
         double regist_yaw_thresh_{ 0.087 };
         double zig_angle_;
         double feature_angle_;

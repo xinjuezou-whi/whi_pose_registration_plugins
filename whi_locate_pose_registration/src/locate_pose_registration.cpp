@@ -137,7 +137,8 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/controller_frequency", controller_frequency_, 10.0);
         node_handle_->param("pose_registration/xy_tolerance", xy_tolerance_, 0.02);
         node_handle_->param("pose_registration/yaw_tolerance", yaw_tolerance_, 5.0);
-        node_handle_->param("pose_registration/LocatePose/regist_linear_thresh", regist_linear_thresh_, 0.03);
+        node_handle_->param("pose_registration/LocatePose/regist_linear_x_thresh", regist_linear_x_thresh_, 0.03);
+        node_handle_->param("pose_registration/LocatePose/regist_linear_y_thresh", regist_linear_y_thresh_, 0.03);
         node_handle_->param("pose_registration/LocatePose/regist_yaw_thresh", regist_yaw_thresh_, 0.087);
         node_handle_->param("pose_registration/LocatePose/zig_angle", zig_angle_, 45.0);
         node_handle_->param("pose_registration/LocatePose/inertial_xyvel", inertial_xyvel_, 0.04);
@@ -174,8 +175,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/rot_offset", rot_offset_, 0.0);  
         node_handle_->param("pose_registration/LocatePose/fine_tune_ratio", fine_tune_ratio_, 0.6); 
         node_handle_->param("pose_registration/LocatePose/rot_back_ratio", rot_back_ratio_, 1.0);   
-        node_handle_->param("pose_registration/LocatePose/lazer_motor_diff", lazer_motor_diff_, 0.412);
-
+        node_handle_->param("pose_registration/LocatePose/lazer_motor_diff", lazer_motor_diff_, 0.412);  //
 
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
@@ -298,11 +298,11 @@ namespace pose_registration_plugins
                         ROS_INFO(" STA_ALIGN finish ,back to STA_REGISTRATE_FINE ");
                         */
 
-                        if (fabs(distance_horizon_) < regist_linear_thresh_ && fabs(distance_vertical_) < regist_linear_thresh_)
+                        if (fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_)
                         {
                             prestate_ = STA_ALIGN;
                             state_ = STA_WAIT_SCAN;
-                            ROS_INFO("STA_ALIGN finish , fabs(distance_horizon_) < regist_linear_thresh_ && fabs(distance_vertical_) < regist_linear_thresh_ , start STA_WAIT_SCAN");
+                            ROS_INFO("STA_ALIGN finish , fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_ , start STA_WAIT_SCAN");
                         }
                         else if (fabs(distance_horizon_) < distthresh_horizon_)
                         {
@@ -462,7 +462,7 @@ namespace pose_registration_plugins
                 prestate_ = state_;
                 state_ = STA_WAIT_SCAN;
                 updateCurrentPose(); 
-                distance_todrive_ = fabs(distance_horizon_) * cos(zig_angle_) + distance_vertical_;          //在这里计算
+                distance_todrive_ = fabs(distance_horizon_) / tan(zig_angle_) + distance_vertical_;          //在这里计算
                 //ROS_INFO("STA_ROT_VERTICAL finish, start STA_ADJUST_VERTICAL, distance_todrive_ =%f", distance_todrive_);
                 ROS_INFO("STA_ROT_VERTICAL finish , prepare for STA_ADJUST_REGIST, cal for distance_todrive_ =%f", distance_todrive_);
             }
@@ -2214,7 +2214,7 @@ namespace pose_registration_plugins
             // yaw aligned, move to done or linear alignment if there is
             double transxyreal = transxy[0] - lazer_motor_diff_;
             ROS_INFO("transxyreal is: %f",transxyreal);
-            if (fabs(transxyreal) < regist_linear_thresh_ && fabs(transxy[1]) < regist_linear_thresh_ &&
+            if ( (fabs(transxyreal) < regist_linear_x_thresh_ && fabs(transxy[1]) < regist_linear_y_thresh_)  &&
                 fabs(registAngles[2]) < regist_yaw_thresh_)
             {
                 ROS_INFO("align right , next state");
@@ -2223,7 +2223,7 @@ namespace pose_registration_plugins
                 return nullptr;
             }
 
-            if (fabs(transxyreal) < 1.8 * regist_linear_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
+            if (fabs(transxyreal) < 1.8 * regist_linear_x_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_y_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
             {
                 is_fine_tune_ = true;
                 ROS_INFO("set is_fine_tune_ true");

@@ -167,10 +167,12 @@ namespace pose_registration_plugins
         double distance_todrive_{ 0.0 };
         double xyvel_{ 0.1 };
         double rotvel_{ 0.2 };
-        double fine_tune_ratio_{ 0.6 };
+        double fine_tune_ratio_rot_{ 0.6 };
+        double fine_tune_ratio_linear_{ 0.6 };
         bool is_fine_tune_{ false };
         double rot_back_ratio_{ 1.0 };
         double lazer_motor_diff_{ 0.412 };
+        double line_reg_thresh_{ 0.05 };
         std::vector<float> ndtsample_coeffs_;
         int ndtmaxiter_;
         int operate_index_{ -1 };
@@ -195,7 +197,7 @@ namespace pose_registration_plugins
         // Euclidean
         double feature_segment_distance_thresh_{ 0.04 };
         int feature_min_size_{ 10 };
-        int feature_max_size_{ 200 };            
+        int feature_max_size_{ 200 };
         int state_{ STA_DONE };
         int prestate_{ STA_DONE };
 

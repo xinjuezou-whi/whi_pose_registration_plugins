@@ -173,10 +173,11 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/wait_scan_time", wait_scan_time_, 0.8);  
         node_handle_->param("pose_registration/LocatePose/is_fixed_location", is_fixed_location_, false); //
         node_handle_->param("pose_registration/LocatePose/rot_offset", rot_offset_, 0.0);  
-        node_handle_->param("pose_registration/LocatePose/fine_tune_ratio", fine_tune_ratio_, 0.6); 
+        node_handle_->param("pose_registration/LocatePose/fine_tune_ratio_rot", fine_tune_ratio_rot_, 0.6); 
+        node_handle_->param("pose_registration/LocatePose/fine_tune_ratio_linear", fine_tune_ratio_linear_, 0.6); 
         node_handle_->param("pose_registration/LocatePose/rot_back_ratio", rot_back_ratio_, 1.0);   
-        node_handle_->param("pose_registration/LocatePose/lazer_motor_diff", lazer_motor_diff_, 0.412);  //
-
+        node_handle_->param("pose_registration/LocatePose/lazer_motor_diff", lazer_motor_diff_, 0.412);  // 
+        node_handle_->param("pose_registration/LocatePose/line_reg_thresh", line_reg_thresh_, 0.05);
         if (!node_handle_->getParam("pose_registration/LocatePose/ndt_sample_coeffs", ndtsample_coeffs_))
         {
             for (int i = 0; i < 3; ++i)
@@ -330,7 +331,7 @@ namespace pose_registration_plugins
                 else
                 {
                     CmdVel.linear.x = 0.0;
-                    CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                    CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
                 }
             }
         }
@@ -386,7 +387,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if(state_ == STA_BACK)
@@ -424,7 +425,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = is_fine_tune_ ? -1 * PoseUtilities::signOf(distDiff) * xyvel_ * fine_tune_ratio_: -1 * PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.x = is_fine_tune_ ? -1 * PoseUtilities::signOf(distDiff) * xyvel_ * fine_tune_ratio_linear_: -1 * PoseUtilities::signOf(distDiff) * xyvel_;
                 CmdVel.linear.y = 0.0;
             }
         }
@@ -458,9 +459,9 @@ namespace pose_registration_plugins
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
                 //modify here 修改这里,优化配准
-                //state_ = STA_ADJUST_VERTICAL;  STA_ADJUST_REGIST
-                prestate_ = state_;
-                state_ = STA_WAIT_SCAN;
+                state_ = STA_ADJUST_VERTICAL;    //STA_ADJUST_REGIST
+                //prestate_ = state_;
+                //state_ = STA_WAIT_SCAN;
                 updateCurrentPose(); 
                 distance_todrive_ = fabs(distance_horizon_) / tan(zig_angle_) + distance_vertical_;          //在这里计算
                 //ROS_INFO("STA_ROT_VERTICAL finish, start STA_ADJUST_VERTICAL, distance_todrive_ =%f", distance_todrive_);
@@ -469,7 +470,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if (state_ == STA_ADJUST_AFTER_REGIST)
@@ -497,7 +498,7 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if (state_ == STA_ADJUST_VERTICAL)
@@ -535,7 +536,7 @@ namespace pose_registration_plugins
             }
             else
             {
-                CmdVel.linear.x = is_fine_tune_ ? PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_ * fine_tune_ratio_ :PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
+                CmdVel.linear.x = is_fine_tune_ ? PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_ * fine_tune_ratio_linear_ :PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
                 CmdVel.linear.y = 0.0;
             }
         }
@@ -1978,6 +1979,52 @@ namespace pose_registration_plugins
         return rightangle;
     }
 
+    using PclPoints = std::vector<pcl::PointXYZ, Eigen::aligned_allocator<pcl::PointXYZ>>;
+    // Function to calculate the RMSE (Root Mean Squared Error)
+    static double calculateRMSE(const PclPoints& Points, double Slope, double Intercept)
+    {
+        double errorSum = 0;
+        for (const auto& it : Points)
+        {
+            double predictedY = Slope * it.x + Intercept;
+            double error = it.y - predictedY;
+            errorSum += error * error;
+        }
+
+        return std::sqrt(errorSum / Points.size());
+    }
+
+    // Function to calculate the slope (m) and intercept (b) of the best-fit line
+    static double linearRegression(const PclPoints& Points, double& Slope, double& Intercept)
+    {
+        if (Points.empty())
+        {
+            std::cerr << "Error: Data sets must have the same number of points and cannot be empty." << std::endl;
+            return 1.0;
+        }
+
+        double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        for (const auto& it : Points)
+        {
+            sumX += it.x;
+            sumY += it.y;
+            sumXY += it.x * it.y;
+            sumX2 += it.x * it.x;
+        }
+
+        double denominator = Points.size() * sumX2 - sumX * sumX;
+        if (denominator == 0)
+        {
+            std::cerr << "Error: Denominator is zero, cannot compute linear regression." << std::endl;
+            return 1.0;
+        }
+
+        Slope = (Points.size() * sumXY - sumX * sumY) / denominator;
+        Intercept = (sumY * sumX2 - sumX * sumXY) / denominator;
+
+        return calculateRMSE(Points, Slope, Intercept);
+    }
+
     std::shared_ptr<void> LocatePoseRegistration::registration(const sensor_msgs::LaserScan::ConstPtr& Laser)
     {
         ros::Time begin = ros::Time::now();
@@ -2017,7 +2064,7 @@ namespace pose_registration_plugins
             pclCloud->points[i].y = aftertrans_pose.position.y;
             pclCloud->points[i].z = aftertrans_pose.position.z;
         }
-        
+
         /// segment don
         pcl::PointCloud<pcl::PointXYZ>::Ptr outcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
         std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> outcloudvec;
@@ -2042,14 +2089,23 @@ namespace pose_registration_plugins
         originpose.position.x = 0;
         originpose.position.y = 0;
         double center_dist_min = std::numeric_limits<double>::max();
-        for (auto oneiter = outcloudvec.begin(); oneiter != outcloudvec.end(); oneiter++)
-        {
+        for (auto& oneiter : outcloudvec)
+        {          
+            double k, b, lineReg;
+            lineReg = 1.0;
+            lineReg = linearRegression(oneiter->points, k, b);
+            ROS_INFO("lineReg = %f",lineReg);
+            if (lineReg < line_reg_thresh_ )
+            {
+                ROS_INFO("lineReg < lineRegThresh, lineReg = %f",lineReg);
+                continue;
+            }
             std::vector<mypoint> pvec;
-            for (int i = 0; i < (*oneiter)->points.size(); ++i)
+            for (int i = 0; i < oneiter->points.size(); ++i)
             {
                 mypoint onepoint;
-                onepoint.x = (*oneiter)->points[i].x;
-                onepoint.y = (*oneiter)->points[i].y;
+                onepoint.x = oneiter->points[i].x;
+                onepoint.y = oneiter->points[i].y;
                 pvec.push_back(onepoint);
             }
             double minradius;
@@ -2063,10 +2119,17 @@ namespace pose_registration_plugins
             if(dis_from_feature < center_dist_min)
             {
                 center_dist_min = dis_from_feature;
-                *outcloud = **oneiter ;
+                *outcloud = *oneiter ;
             }
         }
         
+        if (outcloud->points.empty())
+        {
+            state_ = STA_FAILED;               
+            ROS_INFO(" outcloud->points.size() <= 0");
+            return nullptr;
+        }
+
         //---------------------- 求最小包围圆 ----------------
         // flitered target
         std::vector<mypoint> pvec;
@@ -2330,6 +2393,7 @@ namespace pose_registration_plugins
         //ROS_INFO("cur tfpose is:[%f,%f]",transBaselinkMap.transform.translation.x,transBaselinkMap.transform.translation.y);
 
     }
+
 
     PLUGINLIB_EXPORT_CLASS(pose_registration_plugins::LocatePoseRegistration, whi_pose_registration::BasePoseRegistration)
 } // namespace pose_registration_plugins

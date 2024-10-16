@@ -598,12 +598,13 @@ public:
             if (fabs(euler_angles(0)) == 0 && fabs(euler_angles(1)) == 0 )
             {
                 ROS_INFO("out right value -----");
+                outmatrix = rot_mat;
                 return sac_ia.hasConverged();
             }
             else
             {
                 Eigen::Matrix4f out_mat;
-                return regist_sacia_ndt(target_cloud,source_cloud, euler_angles,transxy ,score,samplecoeff,maxiter,out_mat) ;             
+                return regist_sacia_ndt(target_cloud,source_cloud, euler_angles,transxy ,score,samplecoeff,maxiter,outmatrix) ;             
             }
         }
         else

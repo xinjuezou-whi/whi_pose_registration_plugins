@@ -534,21 +534,23 @@ public:
 
     //配准
     static bool regist_sacia_ndt(pcl::PointCloud<pcl::PointXYZ>::Ptr& target_cloud,
-        pcl::PointCloud<pcl::PointXYZ>::Ptr& source_cloud, Eigen::Vector3f& euler_angles,std::vector<double>& transxy ,double & score,std::vector<float>&  samplecoeff, int maxiter ,Eigen::Matrix4f& outmatrix, bool neediter = true)
+        pcl::PointCloud<pcl::PointXYZ>::Ptr& source_cloud, Eigen::Vector3f& euler_angles,
+        std::vector<double>& transxy, double& score, std::vector<float>& samplecoeff, int maxiter,
+        Eigen::Matrix4f& outmatrix, bool neediter = true)
     {
         pointcloud::Ptr source(new pointcloud);
         pointcloud::Ptr target(new pointcloud);
         source = voxel_grid_fiter(source_cloud,samplecoeff); // 下采样滤波
-        cout<<source->points.size()<<endl;
         target = voxel_grid_fiter(target_cloud,samplecoeff); // 下采样滤波
-        //*target = *target_cloud;
-        cout<<target->points.size()<<endl;
+        printf("[regist_sacia_ndt] downsampled source cloud to: %d\n", source->points.size());
+        printf("[regist_sacia_ndt] downsampled target cloud to: %d\n", target->points.size());
         if (source->points.size() < 10 )
         {    
-            ROS_INFO("source sample get count < 10 ,wrong ");
+            ROS_ERROR("source sample get count < 10, wrong");
             score =1 ;
             return false;
         }
+
         // 1、计算源点云和目标点云的FPFH
         fpfhFeature::Ptr source_fpfh = compute_fpfh_feature(source);
         fpfhFeature::Ptr target_fpfh = compute_fpfh_feature(target);
@@ -579,17 +581,16 @@ public:
         }
         //pcl::PointCloud<pcl::PointXYZ>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZ>);
         //pcl::transformPointCloud(*source_cloud, *output_cloud, sac_ia.getFinalTransformation());
-
         
         Eigen::Matrix4f rot_mat = sac_ia.getFinalTransformation();
         matrix2angle(rot_mat,euler_angles);
         transxy.clear();
         transxy.push_back(rot_mat(0,3));
         transxy.push_back(rot_mat(1,3));
-        ROS_INFO("roll: %f , pitch: %f , yaw: %f ",euler_angles(0) ,euler_angles(1), euler_angles(2));
-        ROS_INFO("x trans: %f , y trans: %f ", transxy[0], transxy[1]);
+        printf("[regist_sacia_ndt] roll: %f, pitch: %f, yaw: %f\n", euler_angles(0), euler_angles(1), euler_angles(2));
+        printf("[regist_sacia_ndt] x trans: %f, y trans: %f\n", transxy[0], transxy[1]);
         outmatrix = rot_mat;
-        if(!neediter)
+        if (!neediter)
         {
             return sac_ia.hasConverged();
         }
@@ -597,14 +598,15 @@ public:
         {
             if (fabs(euler_angles(0)) == 0 && fabs(euler_angles(1)) == 0 )
             {
-                ROS_INFO("out right value -----");
+                ROS_INFO("out right value");
                 outmatrix = rot_mat;
                 return sac_ia.hasConverged();
             }
             else
             {
                 Eigen::Matrix4f out_mat;
-                return regist_sacia_ndt(target_cloud,source_cloud, euler_angles,transxy ,score,samplecoeff,maxiter,outmatrix) ;             
+                return regist_sacia_ndt(target_cloud, source_cloud,
+                    euler_angles, transxy, score, samplecoeff, maxiter, outmatrix);
             }
         }
         else
@@ -613,7 +615,9 @@ public:
         }        
     }
 
-    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,pcl::PointCloud<pcl::PointXYZ>::Ptr& modelcloud, std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& outcloudvec ,double scale1,double scale2 ,double threshold,double segradius ,std::vector<float>& samplecoeff,int maxiter)
+    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& modelcloud,
+        std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& outcloudvec, double scale1, double scale2, double threshold,
+        double segradius, std::vector<float>& samplecoeff, int maxiter)
     {
         int VISUAL = 1, SAVE = 0;//0表示不显示任何结果，1表示显示每一步的输出，2只显示最终结果
 
@@ -718,7 +722,6 @@ public:
             new_point.normal_z = normalvec.z();
             normals_small_scale->points.push_back(new_point);
         }
-
 
         // 大尺度辅助半径
         cout << "Calculating normals for scale2..." << scale2 << endl;
@@ -853,7 +856,7 @@ public:
         pcl::copyPointCloud<pcl::PointNormal, pcl::PointXYZ>(*doncloud, *tmp_xyz);
       
         {
-            printf("tmp_xyz .point.size = %d \n" , tmp_xyz->points.size());
+            printf("[segment_don] tmp_xyz .point.size = %d\n" , tmp_xyz->points.size());
             int ci = 0;
             double minscore = 1.0;
 
@@ -869,14 +872,15 @@ public:
                 extract.setNegative(false);
                 extract.filter(*cloudFeatures);
                 //*out_cloud += *cloudFeatures;
-                ROS_INFO("extractTo cluster indices = %d , cloudFeatures->size() =%d " , ci,cloudFeatures->size());
+                printf("[segment_don] extractTo cluster indices = %d, cloudFeatures->size() = %d\n",
+                    ci, cloudFeatures->size());
 
                 Eigen::Vector3f euler_angles ;
                 double score;
                 std::vector<double> transxy;
                 Eigen::Matrix4f outmat;
-                regist_sacia_ndt(modelcloud, cloudFeatures, euler_angles, transxy,score, samplecoeff, maxiter,outmat,false);
-                ROS_INFO("regist_sacia_ndt in segment find cloud, ci = %d",ci);
+                regist_sacia_ndt(modelcloud, cloudFeatures, euler_angles, transxy,score, samplecoeff, maxiter, outmat, false);
+                printf("[segment_don] segment find cloud, ci = %d\n", ci);
                 if (score < minscore)
                 {
                     //minscore = score;
@@ -887,7 +891,7 @@ public:
                 if (score < score_thres)
                 {
                     outcloudvec.push_back(cloudFeatures);
-                    ROS_INFO("find cloud, ci=%d ",ci);
+                    printf("[segment_don] find cloud, ci = %d\n",ci);
                 }
 
             }
@@ -919,13 +923,13 @@ public:
             std::vector<double> transxy;
             Eigen::Matrix4f outmat;
             regist_sacia_ndt(target_cloud, cloudFeature, euler_angles,transxy, score, samplecoeff, maxiter, outmat);
-            ROS_INFO("regist_sacia_ndt in segment find cloud, ci = %d",ci);
+            printf("[segment_Eucli_sel] segment find cloud, ci = %d\n", ci);
             find_cloud->points.clear();
             if(score < minscore)
             {
                 minscore = score;
                 *find_cloud = *cloudFeature;
-                ROS_INFO("find cloud, ci=%d ",ci);
+                printf("[segment_Eucli_sel] find cloud, ci = %d\n", ci);
             }
 
         }

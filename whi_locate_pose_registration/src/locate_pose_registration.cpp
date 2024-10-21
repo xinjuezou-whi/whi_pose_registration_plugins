@@ -1833,7 +1833,7 @@ namespace pose_registration_plugins
 
             // if (++count >= 50)
             {
-                count = 0;
+                // count = 0;
                 std::lock_guard<std::mutex> lk(mtx_cv_);
                 cv_.notify_all();
 

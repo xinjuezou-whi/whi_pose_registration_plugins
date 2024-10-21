@@ -56,6 +56,7 @@ namespace pose_registration_plugins
         STA_START = 0,
         STA_REGISTRATE,
         STA_REGISTRATE_FINE,
+        STA_REGISTRATING,
         STA_ALIGN,
         STA_PRE_ROT_ANGLE,
         STA_ROT_ANGLE,

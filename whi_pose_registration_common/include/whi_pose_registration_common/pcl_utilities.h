@@ -522,7 +522,7 @@ public:
     }
 
     //体素下采样
-    static pointcloud::Ptr voxel_grid_fiter(pointcloud::Ptr & inCloud , std::vector<float>& samplecoeff)
+    static pointcloud::Ptr voxel_grid_fiter(const pointcloud::Ptr inCloud , std::vector<float>& samplecoeff)
     {
         pcl::VoxelGrid<pcl::PointXYZ> vs;
         vs.setLeafSize(samplecoeff[0], samplecoeff[1], samplecoeff[2]);  //0.005    // 设置0.001不宜 ,过小，采样点数过多，会出现 错误 翻转现象  
@@ -533,21 +533,21 @@ public:
     }
 
     //配准
-    static bool regist_sacia_ndt(pcl::PointCloud<pcl::PointXYZ>::Ptr& target_cloud,
+    static bool regist_sacia_ndt(const pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud,
         pcl::PointCloud<pcl::PointXYZ>::Ptr& source_cloud, Eigen::Vector3f& euler_angles,
         std::vector<double>& transxy, double& score, std::vector<float>& samplecoeff, int maxiter,
         Eigen::Matrix4f& outmatrix, bool neediter = true)
     {
         pointcloud::Ptr source(new pointcloud);
         pointcloud::Ptr target(new pointcloud);
-        source = voxel_grid_fiter(source_cloud,samplecoeff); // 下采样滤波
-        target = voxel_grid_fiter(target_cloud,samplecoeff); // 下采样滤波
+        source = voxel_grid_fiter(source_cloud, samplecoeff); // 下采样滤波
+        target = voxel_grid_fiter(target_cloud, samplecoeff); // 下采样滤波
         printf("[regist_sacia_ndt] downsampled source cloud to: %d\n", source->points.size());
         printf("[regist_sacia_ndt] downsampled target cloud to: %d\n", target->points.size());
         if (source->points.size() < 10 )
         {    
             ROS_ERROR("source sample get count < 10, wrong");
-            score =1 ;
+            score = 1;
             return false;
         }
 
@@ -556,8 +556,6 @@ public:
         fpfhFeature::Ptr target_fpfh = compute_fpfh_feature(target);
     
         // 2、采样一致性SAC_IA初始配准
-        clock_t start, end;
-        start = clock();
         pcl::SampleConsensusInitialAlignment<pcl::PointXYZ, pcl::PointXYZ, pcl::FPFHSignature33> sac_ia;
         sac_ia.setInputSource(source);
         sac_ia.setSourceFeatures(source_fpfh);
@@ -568,54 +566,50 @@ public:
         sac_ia.setMaxCorrespondenceDistance(0.1);// 设置对应点对之间的最大距离  //0.1
         //sac_ia.setNumberOfSamples(80);       //500   // 设置每次迭代计算中使用的样本数量（可省）,可节省时间
         sac_ia.setCorrespondenceRandomness(6);   // 设置在6个最近特征对应中随机选取一个
-        pointcloud::Ptr align(new pointcloud);
-        sac_ia.align(*align);
-        Eigen::Matrix4f initial_RT = Eigen::Matrix4f::Identity();// 定义初始变换矩阵
-        initial_RT = sac_ia.getFinalTransformation();
-        cout << "\nSAC_IA has converged:"<< sac_ia.hasConverged() <<", score is " << sac_ia.getFitnessScore() << endl;
-        cout << "变换矩阵：\n" << initial_RT << endl;
-        score = 1;
-        if (sac_ia.hasConverged())
-        {
-            score =  sac_ia.getFitnessScore();
-        }
-        //pcl::PointCloud<pcl::PointXYZ>::Ptr output_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        //pcl::transformPointCloud(*source_cloud, *output_cloud, sac_ia.getFinalTransformation());
         
-        Eigen::Matrix4f rot_mat = sac_ia.getFinalTransformation();
-        matrix2angle(rot_mat,euler_angles);
-        transxy.clear();
-        transxy.push_back(rot_mat(0,3));
-        transxy.push_back(rot_mat(1,3));
-        printf("[regist_sacia_ndt] roll: %f, pitch: %f, yaw: %f\n", euler_angles(0), euler_angles(1), euler_angles(2));
-        printf("[regist_sacia_ndt] x trans: %f, y trans: %f\n", transxy[0], transxy[1]);
-        outmatrix = rot_mat;
-        if (!neediter)
+        bool iterating = false;
+        do
         {
-            return sac_ia.hasConverged();
-        }
-        if (sac_ia.hasConverged())
-        {
-            if (fabs(euler_angles(0)) == 0 && fabs(euler_angles(1)) == 0 )
+            pointcloud::Ptr align(new pointcloud);
+            sac_ia.align(*align);
+
+            if (sac_ia.hasConverged())
             {
-                ROS_INFO("out right value");
+                Eigen::Matrix4f rot_mat = sac_ia.getFinalTransformation();
+                matrix2angle(rot_mat, euler_angles);
+                transxy.clear();
+                transxy.push_back(rot_mat(0, 3));
+                transxy.push_back(rot_mat(1, 3));
                 outmatrix = rot_mat;
-                return sac_ia.hasConverged();
+                score = sac_ia.getFitnessScore();
+
+                if (neediter)
+                {
+                    if (fabs(euler_angles(0)) < 1e-5 && fabs(euler_angles(1)) < 1e-5)
+                    {
+                        ROS_INFO("registration result found:");
+                        printf("[regist_sacia_ndt] roll: %f, pitch: %f, yaw: %f\n", euler_angles(0), euler_angles(1), euler_angles(2));
+                        printf("[regist_sacia_ndt] x trans: %f, y trans: %f\n", transxy[0], transxy[1]);
+                        printf("[regist_sacia_ndt] converged score is: %f\n", score);
+                        iterating = false;
+                    }
+                    else
+                    {
+                        ROS_WARN("iterating registration");
+                        iterating = true;
+                    }
+                }
             }
             else
             {
-                Eigen::Matrix4f out_mat;
-                return regist_sacia_ndt(target_cloud, source_cloud,
-                    euler_angles, transxy, score, samplecoeff, maxiter, outmatrix);
+                iterating = false;
             }
-        }
-        else
-        {
-            return sac_ia.hasConverged();
-        }        
+        } while (iterating);
+
+        return sac_ia.hasConverged();
     }
 
-    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& modelcloud,
+    static void segment_don(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud, const pcl::PointCloud<pcl::PointXYZ>::Ptr modelcloud,
         std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& outcloudvec, double scale1, double scale2, double threshold,
         double segradius, std::vector<float>& samplecoeff, int maxiter)
     {
@@ -794,7 +788,6 @@ public:
         pcl::PointCloud<pcl::PointNormal>::Ptr doncloud(new pcl::PointCloud<pcl::PointNormal>);
         pcl::copyPointCloud<pcl::PointXYZ, pcl::PointNormal>(*cloud, *doncloud);
 
-        cout << "Calculating DoN... " << endl;
         //------------------------创造DoN算子-------------------------------------
         pcl::DifferenceOfNormalsEstimation<pcl::PointXYZ, pcl::PointNormal, pcl::PointNormal> don;
         don.setInputCloud(cloud);
@@ -810,22 +803,21 @@ public:
         don.computeFeature(*doncloud);//对输入点集，计算DON特征向量，并输出
 
         //------------------输出一些不同的曲率--------------------------------
+        std::cout << "total points: " << doncloud->size() << ", output sampled curvatures for reference:" << std::endl;
+        int step = doncloud->size() / 10;
+        std::cout << "[";
+        for (int i = 0; i < doncloud->size(); i += step)
         {
-            cout << "You may have some sense about the input threshold（curvature） next time for your data" << endl;
-            int size_cloud = doncloud->size();
-            cout << size_cloud << endl;
-            int step = size_cloud / 10;
-            for (int i = 0; i < size_cloud; i += step)cout << " " << doncloud->points[i].curvature << " " << endl;
-
+            std::cout << doncloud->points[i].curvature << ",";
         }
+        std::cout << "]" << std::endl;
 
         //-------------------------按大小滤波-----------------------------
-        cout << "Filtering out DoN mag <= " << threshold << "..." << endl;
+        std::cout << "filtering out DoN by curvature greater than " << threshold << endl;
         // 创建条件滤波函数
         pcl::ConditionOr<pcl::PointNormal>::Ptr range_cond(new pcl::ConditionOr<pcl::PointNormal>());//确定点是否属于满足设定的条件
         range_cond->addComparison(pcl::FieldComparison<pcl::PointNormal>::ConstPtr(
-            new pcl::FieldComparison<pcl::PointNormal>("curvature", pcl::ComparisonOps::GT, threshold))
-        );//添加比较条件
+            new pcl::FieldComparison<pcl::PointNormal>("curvature", pcl::ComparisonOps::GT, threshold)));//添加比较条件
         // 创建滤波
         pcl::ConditionalRemoval<pcl::PointNormal> condrem;
         condrem.setInputCloud(doncloud);
@@ -834,10 +826,9 @@ public:
         //设置输入点云
         condrem.filter(*doncloud_filtered);
         doncloud = doncloud_filtered;
-        cout << "Filtered Pointcloud: " << doncloud->points.size() << " data points." << endl;
+        std::cout << "filtered Pointcloud size " << doncloud->points.size() << std::endl;
 
-        cout << "Clustering using EuclideanClusterExtraction with tolerance <= " << segradius << "..." << endl;
-
+        std::cout << "Clustering using EuclideanClusterExtraction with tolerance <= " << segradius << std::endl;
         pcl::search::KdTree<pcl::PointNormal>::Ptr segtree(new pcl::search::KdTree<pcl::PointNormal>);
         segtree->setInputCloud(doncloud);
 
@@ -851,58 +842,40 @@ public:
         ec.setInputCloud(doncloud);
         ec.extract(cluster_indices);
         
-        pcl::PointCloud<pcl::PointXYZ>::Ptr find_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::PointCloud <pcl::PointXYZ>::Ptr tmp_xyz(new pcl::PointCloud<pcl::PointXYZ>);
-        pcl::copyPointCloud<pcl::PointNormal, pcl::PointXYZ>(*doncloud, *tmp_xyz);
-      
+        // convert normal to xyz and extract
+        pcl::PointCloud <pcl::PointXYZ>::Ptr cloudXyz(new pcl::PointCloud<pcl::PointXYZ>);
+        pcl::copyPointCloud<pcl::PointNormal, pcl::PointXYZ>(*doncloud, *cloudXyz);
+        int ci = 0;
+        for (const auto& cluster : cluster_indices)
         {
-            printf("[segment_don] tmp_xyz .point.size = %d\n" , tmp_xyz->points.size());
-            int ci = 0;
-            double minscore = 1.0;
+            ci++;
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloudFeatures(new pcl::PointCloud<pcl::PointXYZ>());
+            pcl::PointIndices::Ptr indices(new pcl::PointIndices(cluster));
+            pcl::ExtractIndices<pcl::PointXYZ> extract;
+            extract.setInputCloud(cloudXyz);
+            extract.setIndices(indices);
+            extract.setNegative(false);
+            extract.filter(*cloudFeatures);
+            printf("[segment_don] extractTo cluster indices = %d, cloudFeatures->size() = %d\n",
+                ci, cloudFeatures->size());
 
-            for (const auto& cluster : cluster_indices)
+            // Eigen::Vector3f euler_angles ;
+            // double score;
+            // std::vector<double> transxy;
+            // Eigen::Matrix4f outmat;
+            // regist_sacia_ndt(modelcloud, cloudFeatures, euler_angles, transxy, score, samplecoeff, maxiter, outmat, false);
+            // printf("[segment_don] segment find cloud, ci = %d\n", ci);
+            // double score_thres = 5e-4;
+            // if (score < score_thres)
             {
-                ci++;
-                pcl::PointCloud<pcl::PointXYZ>::Ptr cloudFeatures(new pcl::PointCloud<pcl::PointXYZ>());
-                //PclUtilities<pcl::PointXYZI>::extractTo(pclOperating, cluster, cloudFeatures);
-                pcl::PointIndices::Ptr indices(new pcl::PointIndices(cluster));
-                pcl::ExtractIndices<pcl::PointXYZ> extract;
-                extract.setInputCloud(tmp_xyz);
-                extract.setIndices(indices);
-                extract.setNegative(false);
-                extract.filter(*cloudFeatures);
-                //*out_cloud += *cloudFeatures;
-                printf("[segment_don] extractTo cluster indices = %d, cloudFeatures->size() = %d\n",
-                    ci, cloudFeatures->size());
-
-                Eigen::Vector3f euler_angles ;
-                double score;
-                std::vector<double> transxy;
-                Eigen::Matrix4f outmat;
-                regist_sacia_ndt(modelcloud, cloudFeatures, euler_angles, transxy,score, samplecoeff, maxiter, outmat, false);
-                printf("[segment_don] segment find cloud, ci = %d\n", ci);
-                if (score < minscore)
-                {
-                    //minscore = score;
-                    //*find_cloud = *cloudFeatures;
-                    //ROS_INFO("find cloud, ci=%d ",ci);
-                }
-                double score_thres = 5e-4;
-                if (score < score_thres)
-                {
-                    outcloudvec.push_back(cloudFeatures);
-                    printf("[segment_don] find cloud, ci = %d\n",ci);
-                }
-
+                outcloudvec.push_back(cloudFeatures);
+                printf("[segment_don] find cloud, ci = %d\n",ci);
             }
-            //*outcloud = *find_cloud;
         }
-        
     }
 
     static void segment_Eucli_sel(pcl::PointCloud<pcl::PointXYZ>::Ptr& cloudFeatures, pcl::PointCloud<pcl::PointXYZ>::Ptr& target_cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& outcloud,double feature_segment_distance_thresh_,int feature_min_size_,int feature_max_size_,std::vector<float>& samplecoeff,int maxiter)
     {
-
         std::vector<pcl::PointIndices> featureIndices;
         featureIndices = segmentEuclidean(cloudFeatures,feature_segment_distance_thresh_, feature_min_size_, feature_max_size_);
         std::cout << "total feature number from features: " << featureIndices.size() << std::endl;

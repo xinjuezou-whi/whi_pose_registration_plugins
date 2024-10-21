@@ -221,7 +221,7 @@ namespace pose_registration_plugins
         odom_sub_ = std::make_unique<ros::Subscriber>(
             node_handle_->subscribe<nav_msgs::Odometry>(odom_topic_, 1, boost::bind(&LocatePoseRegistration::odomCallback, this, _1)) );
         // event queue for laser scan
-        queue_scan_ = std::make_unique<EventQueue<void>>(10, false);
+        queue_scan_ = std::make_unique<EventQueue<void>>(1, false);
         threadRegistration();
 
         packpath_ = ros::package::getPath("whi_locate_pose_registration");
@@ -238,95 +238,65 @@ namespace pose_registration_plugins
         
         if (state_ == STA_ALIGN)
         {
-            /*
-            if (fabs(registAngle_) < regist_yaw_thresh_)
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2],
+                PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (issetimu_)
             {
-                if (fabs(distance_horizon_) < distthresh_horizon_)
+                angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+                if (debug_count_ == 5)
                 {
-                    distance_todrive_ = distance_vertical_;
-                    state_ = STA_ADJUST_VERTICAL;
-
-                    ROS_INFO(" STA_REGISTRATE_FINE finish ,direct to STA_ADJUST_VERTICAL ,distance_todrive_=%f ",distance_todrive_);
-                }                    
-                else
-                {
-                    state_ = STA_PRE_ROT_ANGLE;
-                    ROS_INFO("STA_REGISTRATE_FINE finish, start STA_PRE_ROT_ANGLE");
+                    printf("in state STA_ALIGN, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f\n",
+                        angle_target_imu_, yawFromImu, angleDiff );
                 }
-                updateCurrentPose(); 
-
-                ROS_INFO("STA_REGISTRATE_FINE finish, yawFromImu = %f", yawFromImu);
             }
             else
-            */
             {
-                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
-                double angleDiff = angles::shortest_angular_distance(
-                    PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2],
-                    PoseUtilities::toEuler(pose_target_.orientation)[2]);
-                if (issetimu_)
+                if (debug_count_ == 5)
                 {
-                    angleDiff = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-                    if (debug_count_ == 5)
-                    {
-                        printf("in state STA_ALIGN, angle_target_imu_ = %f, yawFromImu = %f, angleDiff = %f\n",
-                            angle_target_imu_, yawFromImu, angleDiff );
-                    }
+                    printf("in state STA_ALIGN, angle_target_imu_ = %f, angleDiff = %f\n",
+                        angle_target_imu_, angleDiff );
                 }
-                else
+            }        
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                if (prestate_ == STA_REGISTRATE_FINE)
                 {
-                    if (debug_count_ == 5)
+                    if (fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_)
                     {
-                        printf("in state STA_ALIGN, angle_target_imu_ = %f, angleDiff = %f\n",
-                            angle_target_imu_, angleDiff );
-                    }
-                }        
-                if (fabs(angleDiff) < yaw_tolerance_)
-                {
-                    CmdVel.linear.x = 0.0;
-                    CmdVel.angular.z = 0.0;
-                    if (prestate_ == STA_REGISTRATE_FINE)
-                    {
-                        /*
                         prestate_ = STA_ALIGN;
                         state_ = STA_WAIT_SCAN;
-                        ROS_INFO(" STA_ALIGN finish ,back to STA_REGISTRATE_FINE ");
-                        */
-
-                        if (fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_)
-                        {
-                            prestate_ = STA_ALIGN;
-                            state_ = STA_WAIT_SCAN;
-                            printf("STA_ALIGN finished, fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_, start STA_WAIT_SCAN\n");
-                        }
-                        else if (fabs(distance_horizon_) < distthresh_horizon_)
-                        {
-                            distance_todrive_ = distance_vertical_;
-                            state_ = STA_ADJUST_VERTICAL;
-
-                            printf("STA_REGISTRATE_FINE finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
-                        }                    
-                        else
-                        {
-                            state_ = STA_PRE_ROT_ANGLE;
-                            printf("STA_REGISTRATE_FINE finished, start STA_PRE_ROT_ANGLE\n");
-                        }
-                        updateCurrentPose(); 
-
-                        printf("STA_REGISTRATE_FINE finished, yawFromImu = %f\n", yawFromImu);
-                        
+                        printf("STA_ALIGN finished, fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_, start STA_WAIT_SCAN\n");
                     }
-                    else if (prestate_ == STA_REGISTRATE)
+                    else if (fabs(distance_horizon_) < distthresh_horizon_)
                     {
-                        state_ = STA_WAIT_SCAN;
-                        printf("STA_REGISTRATE finished, wait scan\n");
+                        distance_todrive_ = distance_vertical_;
+                        state_ = STA_ADJUST_VERTICAL;
+
+                        printf("STA_REGISTRATE_FINE finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
+                    }                    
+                    else
+                    {
+                        state_ = STA_PRE_ROT_ANGLE;
+                        printf("STA_REGISTRATE_FINE finished, start STA_PRE_ROT_ANGLE\n");
                     }
+                    updateCurrentPose(); 
+
+                    printf("STA_REGISTRATE_FINE finished, yawFromImu = %f\n", yawFromImu);
                 }
-                else
+                else if (prestate_ == STA_REGISTRATE)
                 {
-                    CmdVel.linear.x = 0.0;
-                    CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                    state_ = STA_WAIT_SCAN;
+                    printf("STA_REGISTRATE finished, wait scan\n");
                 }
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
             }
         }
         else if (state_ == STA_PRE_ROT_ANGLE)
@@ -334,8 +304,6 @@ namespace pose_registration_plugins
             geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
             double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
 
-            // pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - PoseUtilities::signOf(distance_horizon_) * zig_angle_);
-            // angle_target_imu_ = yawFromImu - PoseUtilities::signOf(distance_horizon_) * zig_angle_;
             pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
                 angles::shortest_angular_distance(PoseUtilities::signOf(distance_horizon_) * zig_angle_, angleBaselink));
             angle_target_imu_ = angles::shortest_angular_distance(
@@ -590,13 +558,11 @@ namespace pose_registration_plugins
                 }
                 else
                 {
-                    {
-                        pose_end_.position.x = getfea_cur_pose_.position.x;
-                        pose_end_.position.y = getfea_cur_pose_.position.y;
-                        state_ = STA_PRE_ORIENTATION;
-                        printf("pose_end is: [%f, %f]\n", pose_end_.position.x, pose_end_.position.y);
-                        printf("target_rela_pose_[2] > 0, start STA_PRE_ORIENTATION\n");
-                    }
+                    pose_end_.position.x = getfea_cur_pose_.position.x;
+                    pose_end_.position.y = getfea_cur_pose_.position.y;
+                    state_ = STA_PRE_ORIENTATION;
+                    printf("pose_end is: [%f, %f]\n", pose_end_.position.x, pose_end_.position.y);
+                    printf("target_rela_pose_[2] > 0, start STA_PRE_ORIENTATION\n");
                 }
             }
             else if (fabs(target_rela_pose_[1]) < 0.001)
@@ -642,7 +608,7 @@ namespace pose_registration_plugins
                 pose_end_ = PoseUtilities::applyTransform(relapos, subtrans);
 
                 state_ = STA_TO_HORIZON;
-                printf("STA_PRE_HORIZON finished, start STA_TO_HORIZON, pose_end_ is: [%f, %f]\n",
+                printf("STA_PRE_HORIZON finished, start STA_TO_HORIZON, pose_end_ is:[%f, %f]\n",
                     pose_end_.position.x, pose_end_.position.y);
             }
         }
@@ -652,7 +618,7 @@ namespace pose_registration_plugins
 
             if (target_rela_pose_vec_.empty())
             {
-                ROS_INFO("in STA_PRE_NEXT, arrive done, now curpose is: [%f, %f], yawFromImu is: %f",
+                ROS_INFO("---------- in STA_PRE_NEXT, pose registrated, curpose is:[%f, %f], yawFromImu is:%f",
                     transBaselinkMap.transform.translation.x, transBaselinkMap.transform.translation.y, yawFromImu);
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
@@ -1823,7 +1789,7 @@ namespace pose_registration_plugins
             pose_feature_.position.x = getfeature.feature_pose[0];
             pose_feature_.position.y = getfeature.feature_pose[1];
             target_rela_pose_.resize(3);
-            target_rela_pose_vec_.assign(getfeature.target_rela_pose_vec.begin(),getfeature.target_rela_pose_vec.end());
+            target_rela_pose_vec_.assign(getfeature.target_rela_pose_vec.begin(), getfeature.target_rela_pose_vec.end());
             getfea_cur_pose_.position.x = getfeature.cur_pose[0];
             getfea_cur_pose_.position.y = getfeature.cur_pose[1];
             getfea_cur_pose_.orientation = PoseUtilities::fromEuler(0.0, 0.0, getfeature.cur_pose[2]);
@@ -1861,10 +1827,19 @@ namespace pose_registration_plugins
                 Laser), "registration");
         }
 
-        if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE || state_ == STA_DEBUG || state_ == STA_ADJUST_REGIST)
+        if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE)
         {
-            std::lock_guard<std::mutex> lk(mtx_cv_);
-            cv_.notify_all();
+            static int count = 0;
+
+            if (++count >= 50)
+            {
+                count = 0;
+                std::lock_guard<std::mutex> lk(mtx_cv_);
+                cv_.notify_all();
+
+                prestate_ = state_;
+                state_ = STA_REGISTRATING;
+            }
         }
     }
 
@@ -1947,7 +1922,7 @@ namespace pose_registration_plugins
         /// convert to pcl cloud
         auto pclCloud = PclUtilities<pcl::PointXYZ>::fromMsgLaserScan(*Laser);
         operate_index_++;
-        ROS_INFO("*************************************registration operate_index = %d", operate_index_);
+        ROS_INFO("---------- registrating operate_index = %d", operate_index_);
         printf("read %d from the laserscan\n", pclCloud->size());
         
         /// transform the laser according to user specified frame
@@ -2129,12 +2104,12 @@ namespace pose_registration_plugins
         {
             printf("add cur cloud while registration done\n");
             
-            viewer.addviewCloud(minoutcloud,"after_cur_features");
+            viewer.addviewCloud(minoutcloud, "after_cur_features");
             state_ = STA_DONE;
             return nullptr;
         }
 
-        printf("after segment, start registration......\n");
+        printf("after segment, start registration\n");
         /// registration
         // 对点云进行平移, 激光中心和车体旋转中心
         for (int i = 0; i < minoutcloud->points.size(); ++i)
@@ -2152,15 +2127,23 @@ namespace pose_registration_plugins
             ROS_WARN("registration failed");
             return nullptr;
         }
-        printf("out regist, roll:%f, pitch:%f, yaw: %f, x trans: %f, ytrans: %f\n",
-            registAngles[0], registAngles[1],  registAngles[2], transxy[0], transxy[1]);
         
         if (debug_count_ > 0)
         {
+            for (int i = 0; i < minoutcloud->points.size(); ++i)
+            {
+                minoutcloud->points[i].x = minoutcloud->points[i].x + lazer_motor_diff_;
+            }
             pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
             pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
-            //static PclVisualize<pcl::PointXYZ> viewer;
-            viewer.viewCloud02(minoutcloud,"cur_features" , transcloud, "debug_features", target_cloud_,"target_features");
+            pcl::PointCloud<pcl::PointXYZ>::Ptr targetoffset(new pcl::PointCloud<pcl::PointXYZ>);
+            *targetoffset = *target_cloud_;
+            for (int i = 0; i < targetoffset->points.size(); ++i)
+            {
+                targetoffset->points[i].x = targetoffset->points[i].x + lazer_motor_diff_;
+            }            
+            viewer.viewCloud02(minoutcloud, "cur_features",
+                transcloud, "debug_features", target_cloud_, "target_features", targetoffset, "target_offset");
         }
         if (debug_count_ == 1 || debug_count_ == 3)
         {
@@ -2204,12 +2187,10 @@ namespace pose_registration_plugins
             if (fabs(transxyreal) < 1.8 * regist_linear_x_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_y_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
             {
                 is_fine_tune_ = true;
-                printf("set is_fine_tune_ true\n");
             }
             else
             {
                 is_fine_tune_ = false;
-                printf("set is_fine_tune_ false\n");
             }
             registAngle_ = registAngles[2];
             // otherwise, rotate to align
@@ -2238,15 +2219,7 @@ namespace pose_registration_plugins
             updateCurrentPose(); 
             pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
 
-            prestate_ = state_;
-            if (prestate_ == STA_ADJUST_REGIST)
-            {
-                state_ = STA_ADJUST_AFTER_REGIST;
-            }
-            else
-            {
-                state_ = STA_ALIGN;
-            }
+            state_ = STA_ALIGN;
         }
         else
         {

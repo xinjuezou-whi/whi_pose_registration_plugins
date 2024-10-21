@@ -62,9 +62,10 @@ public:
     void viewCloud02(const typename pcl::PointCloud<T>::Ptr Cur, const std::string& CurCloudID,
         const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         const typename pcl::PointCloud<T>::Ptr Tar, const std::string& TarCloudID,
+        const typename pcl::PointCloud<T>::Ptr offset, const std::string& offsetID,
         int PointSize = 1, std::array<double, 3> PointColor = {0.0, 1.0, 0.0})
     {
-        queue_->produce(std::bind(&PclVisualize::view02, this,Cur ,CurCloudID , Src, CloudID, Tar, TarCloudID, PointSize, PointColor), "view");
+        queue_->produce(std::bind(&PclVisualize::view02, this,Cur ,CurCloudID , Src, CloudID, Tar, TarCloudID, offset, offsetID, PointSize, PointColor), "view");
     };    
     void addviewCloud(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         int PointSize = 1, std::array<double, 3> PointColor = {0.0, 1.0, 0.0})
@@ -108,6 +109,7 @@ private:
     std::shared_ptr<void> view02(const typename pcl::PointCloud<T>::Ptr Cur, const std::string& CurCloudID,
         const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         const typename pcl::PointCloud<T>::Ptr Tar, const std::string& TarCloudID,
+        const typename pcl::PointCloud<T>::Ptr offset, const std::string& offsetID,
         int PointSize, std::array<double, 3> PointColor)
     {
         if (!viewer_)
@@ -139,7 +141,15 @@ private:
         else
         {
             viewer_->addPointCloud<T>(Cur, CurCloudID);
-        }              
+        }  
+        if (viewer_->contains(offsetID))
+        {
+            viewer_->updatePointCloud<T>(offset, offsetID);
+        }
+        else
+        {
+            viewer_->addPointCloud<T>(offset, offsetID);
+        }                      
 
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, CloudID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
@@ -150,6 +160,10 @@ private:
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, TarCloudID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
             1.0, 0.0, 0.0, TarCloudID);
+        viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, offsetID);
+        viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
+            1.0, 0.0, 0.0, offsetID);
+
         
         return nullptr;
     }

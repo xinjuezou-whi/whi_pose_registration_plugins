@@ -1829,9 +1829,9 @@ namespace pose_registration_plugins
 
         if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE)
         {
-            static int count = 0;
+            // static int count = 0;
 
-            if (++count >= 50)
+            // if (++count >= 50)
             {
                 count = 0;
                 std::lock_guard<std::mutex> lk(mtx_cv_);

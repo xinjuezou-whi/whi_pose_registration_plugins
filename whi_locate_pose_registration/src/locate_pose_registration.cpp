@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.8" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.9" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -195,6 +195,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/seg_radius", seg_radius_, 5.0);
 
         node_handle_->param("pose_registration/LocatePose/debug_count", debug_count_, 0);
+        node_handle_->param("pose_registration/LocatePose/debug_visualize", debug_visualize_, false);
         
         node_handle_->param("pose_registration/LocatePose/feature_segment_distance_thresh",
             feature_segment_distance_thresh_, 0.04);
@@ -202,9 +203,9 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/feature_max_size", feature_max_size_, 200);
         node_handle_->param("pose_registration/LocatePose/ndt_maxiter", ndtmaxiter_, 5000);
         node_handle_->param("pose_registration/LocatePose/odom_topic", odom_topic_, std::string("odom"));
-        node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);  
-        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_vel", imu_adjust_rot_vel_, 0.01);   //
-        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_thresh", imu_adjust_rot_thresh_, 0.02); 
+        node_handle_->param("pose_registration/LocatePose/using_odom_pose", using_odom_pose_, false);
+        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_vel", imu_adjust_rot_vel_, 0.01);
+        node_handle_->param("pose_registration/LocatePose/imu_adjust_rot_thresh", imu_adjust_rot_thresh_, 0.02);
 
         if (!node_handle_->getParam("pose_registration/charge_walk_pose", charge_walk_pose_))
         {
@@ -2128,7 +2129,7 @@ namespace pose_registration_plugins
             return nullptr;
         }
         
-        if (debug_count_ > 0)
+        if (debug_visualize_)
         {
             for (int i = 0; i < minoutcloud->points.size(); ++i)
             {

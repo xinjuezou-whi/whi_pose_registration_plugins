@@ -222,5 +222,6 @@ namespace pose_registration_plugins
         std::string packpath_;
         std::vector<double> charge_walk_pose_;
         int debug_count_{ 0 };
+        bool debug_visualize_{ false };
     };
 } // namespace pose_registration_plugins

@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.9" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.10" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -1830,17 +1830,11 @@ namespace pose_registration_plugins
 
         if (state_ == STA_REGISTRATE || state_ == STA_REGISTRATE_FINE)
         {
-            // static int count = 0;
+            std::lock_guard<std::mutex> lk(mtx_cv_);
+            cv_.notify_all();
 
-            // if (++count >= 50)
-            {
-                // count = 0;
-                std::lock_guard<std::mutex> lk(mtx_cv_);
-                cv_.notify_all();
-
-                prestate_ = state_;
-                state_ = STA_REGISTRATING;
-            }
+            prestate_ = state_;
+            state_ = STA_REGISTRATING;
         }
     }
 

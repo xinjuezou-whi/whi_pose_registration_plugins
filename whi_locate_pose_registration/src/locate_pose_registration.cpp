@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.10" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.06.11" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -1712,7 +1712,7 @@ namespace pose_registration_plugins
 
     void LocatePoseRegistration::standby(const geometry_msgs::PoseStamped& PatternPose)
     {
-        if (PatternPose.header.frame_id == "charging_logic")
+        if (PatternPose.header.frame_id == "charging_safe_pose") // flag of back to the safe pose to avoid collision
         {
             // charge to walk
             state_ = STA_CHARGE_WALK;

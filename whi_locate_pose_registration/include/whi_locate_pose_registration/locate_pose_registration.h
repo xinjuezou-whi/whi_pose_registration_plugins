@@ -87,7 +87,13 @@ namespace pose_registration_plugins
         STA_CHARGE_WALK,
         STA_CHARGE_PRE_ROT,
         STA_CHARGE_ROT,
-        STA_CHARGE_HORIZON
+        STA_CHARGE_HORIZON,
+        STA_OFFSET_YAW,
+        STA_OFFSET_ROTATING,
+        STA_OFFSET_Y,
+        STA_OFFSET_FORWARD,
+        STA_OFFSET_MOVING,
+        STA_OFFSET_X
     };
 
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
@@ -99,18 +105,21 @@ namespace pose_registration_plugins
     public:
         void initialize() override;
         void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
-        void standby(const geometry_msgs::PoseStamped& PatternPose) override;
+        void standby(const geometry_msgs::PoseStamped& Goal) override;
         int goalState() override;
 
     private:
+        void stateRegistration(geometry_msgs::Twist& CmdVel, double YawImu);
+        void stateOffset(geometry_msgs::Twist& CmdVel, double YawImu);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
+        void subCallbackOdom(const nav_msgs::Odometry::ConstPtr& msg);
         bool checkcurpose();
         void updateCurrentPose();
         double getrightImu(double angletar);
         std::shared_ptr<void> registration(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void threadRegistration();
-        void odomCallback(const nav_msgs::Odometry::ConstPtr& msg);
+        void updatePre(double YawImu);
 
     private:
         bool is_fixed_location_;
@@ -118,7 +127,7 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_arrive_;
         geometry_msgs::Pose pose_standby_;
         geometry_msgs::Pose pose_standby_odom_;
-        geometry_msgs::Pose get_pose_odom_;
+        geometry_msgs::Pose pose_odom_;
         bool using_odom_pose_;
         geometry_msgs::Pose feature_cur_pose_;
         double pattern_met_location_thresh_{ 0.5 };
@@ -129,6 +138,8 @@ namespace pose_registration_plugins
         geometry_msgs::Pose pose_target_;
         geometry_msgs::Pose pose_end_;
         geometry_msgs::Pose getfea_cur_pose_;
+        geometry_msgs::Pose pose_pre_;
+        double yaw_pre_{ 0.0 };
         double controller_frequency_;
         double predict_period_count_;
         double predict_dist_thresh_;
@@ -203,7 +214,7 @@ namespace pose_registration_plugins
         int prestate_{ STA_DONE };
 
         pcl::PointCloud<pcl::PointXYZ>::Ptr target_cloud_;
-        bool issetimu_{ false };
+        bool using_imu_{ false };
         std::unique_ptr<ros::Subscriber> sub_imu_{ nullptr };
         double angleyaw_imu_;
         double angle_target_imu_;
@@ -216,11 +227,15 @@ namespace pose_registration_plugins
         std::atomic<bool> terminated_{ false };
 
         std::string odom_topic_;
-        std::unique_ptr<ros::Subscriber> odom_sub_;
-        nav_msgs::Odometry base_odom_;
+        std::unique_ptr<ros::Subscriber> sub_odom_;
 
         std::string packpath_;
         std::vector<double> charge_walk_pose_;
+
+        // offset
+        std::array<double, 3> offsets_; // x, y, yaw
+
+        // debug
         int debug_count_{ 0 };
         bool debug_visualize_{ false };
     };

@@ -34,7 +34,7 @@ namespace pose_registration_plugins
     public:
         void initialize() override;
         void computeVelocityCommands(geometry_msgs::Twist& CmdVel) override;
-        void standby(const geometry_msgs::PoseStamped& PatternPose) override;
+        void standby(const whi_interfaces::PoseRegistrationGoalConstPtr& Goal) override;
         int goalState() override;
 
     private:

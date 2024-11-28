@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   whi_pose_registration_common
   laser_geometry
   pcl_ros
+  whi_interfaces
 )
 
 ## System dependencies are found with CMake's conventions

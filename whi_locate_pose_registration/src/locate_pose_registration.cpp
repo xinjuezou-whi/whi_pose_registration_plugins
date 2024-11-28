@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.07.1" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.08" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -240,9 +240,15 @@ namespace pose_registration_plugins
         stateOffset(CmdVel, yawFromImu);
     }
 
-    void LocatePoseRegistration::standby(const geometry_msgs::PoseStamped& Goal)
+    void LocatePoseRegistration::standby(const whi_interfaces::PoseRegistrationGoalConstPtr& Goal)
     {
-        if (Goal.header.frame_id == "charging_safe_pose") // flag of back to the safe pose to avoid collision
+        if (Goal->velocity_scale > 1e-3)
+        {
+            xyvel_ *= Goal->velocity_scale;
+            rotvel_ *= Goal->velocity_scale;
+        }
+
+        if (Goal->target_pose.header.frame_id == "charging_safe_pose") // flag of back to the safe pose to avoid collision
         {
             // charge to walk
             state_ = STA_CHARGE_WALK;
@@ -250,11 +256,11 @@ namespace pose_registration_plugins
             printf("standby, start STA_CHARGE_WALK\n");
             updateCurrentPose();
         }
-        else if (Goal.header.frame_id == "motion_offsets") // flag of move offset
+        else if (Goal->target_pose.header.frame_id == "motion_offsets") // flag of move offset
         {
-            offsets_[0] = Goal.pose.position.x;
-            offsets_[1] = Goal.pose.position.y;
-            offsets_[2] = PoseUtilities::toEuler(Goal.pose.orientation)[2];
+            offsets_[0] = Goal->target_pose.pose.position.x;
+            offsets_[1] = Goal->target_pose.pose.position.y;
+            offsets_[2] = PoseUtilities::toEuler(Goal->target_pose.pose.orientation)[2];
 
             state_ = STA_OFFSET_YAW;
         }

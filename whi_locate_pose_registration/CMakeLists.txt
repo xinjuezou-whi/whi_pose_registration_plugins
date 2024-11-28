@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   laser_geometry
   pcl_ros
   pcl_conversions
+  whi_interfaces
 )
 
 ## System dependencies are found with CMake's conventions

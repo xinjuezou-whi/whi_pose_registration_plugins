@@ -25,7 +25,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI plain pose registration plugin VERSION 00.02.1" << std::endl;
+	    std::cout << "\nWHI plain pose registration plugin VERSION 00.03" << std::endl;
 	    std::cout << "Copyright © 2023-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -209,7 +209,7 @@ namespace pose_registration_plugins
         }
     }
 
-    void PlainPoseRegistration::standby(const geometry_msgs::PoseStamped& PatternPose)
+    void PlainPoseRegistration::standby(const whi_interfaces::PoseRegistrationGoalConstPtr& Goal)
     {
         state_ = STA_ALIGNED;
     }

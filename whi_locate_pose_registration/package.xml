@@ -54,15 +54,18 @@
   <build_depend>laser_geometry</build_depend>
   <build_depend>whi_pose_registration</build_depend>
   <build_depend>whi_pose_registration_common</build_depend>
+  <build_depend>whi_interfaces</build_depend>
   <build_export_depend>roscpp</build_export_depend>
   <build_export_depend>std_msgs</build_export_depend>
   <build_export_depend>whi_pose_registration</build_export_depend>
   <build_export_depend>whi_pose_registration_common</build_export_depend>
+  <build_export_depend>whi_interfaces</build_export_depend>
   <exec_depend>roscpp</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>laser_geometry</exec_depend>
   <exec_depend>whi_pose_registration</exec_depend>
   <exec_depend>whi_pose_registration_common</exec_depend>
+  <exec_depend>whi_interfaces</exec_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

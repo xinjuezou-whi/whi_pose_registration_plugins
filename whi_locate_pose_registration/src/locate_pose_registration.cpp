@@ -28,7 +28,7 @@ namespace pose_registration_plugins
         : BasePoseRegistration()
     {
         /// node version and copyright announcement
-	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.08" << std::endl;
+	    std::cout << "\nWHI loacate pose registration plugin VERSION 00.08.1" << std::endl;
 	    std::cout << "Copyright © 2024-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
     }
 
@@ -159,8 +159,6 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/map_frame", mapframe_, std::string("map"));
         node_handle_->param("pose_registration/LocatePose/imu_topic", imuTopic, std::string("imu")); //issetimu
         node_handle_->param("pose_registration/LocatePose/using_imu", using_imu_, false); 
-        node_handle_->param("pose_registration/LocatePose/xyvel", xyvel_, 0.05);
-        node_handle_->param("pose_registration/LocatePose/rotvel", rotvel_, 0.1);    
         node_handle_->param("pose_registration/LocatePose/horizon_aligned_thresh", distthresh_horizon_, 0.005);   
         node_handle_->param("pose_registration/LocatePose/pattern_met_location_thresh", pattern_met_location_thresh_, 0.5);  
         node_handle_->param("pose_registration/LocatePose/pattern_met_radius_thresh", pattern_met_radius_thresh_, 0.08); 
@@ -242,6 +240,8 @@ namespace pose_registration_plugins
 
     void LocatePoseRegistration::standby(const whi_interfaces::PoseRegistrationGoalConstPtr& Goal)
     {
+        node_handle_->param("pose_registration/LocatePose/xyvel", xyvel_, 0.05);
+        node_handle_->param("pose_registration/LocatePose/rotvel", rotvel_, 0.1);
         if (Goal->velocity_scale > 1e-3)
         {
             xyvel_ *= Goal->velocity_scale;

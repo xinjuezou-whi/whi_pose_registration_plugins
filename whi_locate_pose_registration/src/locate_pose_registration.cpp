@@ -632,6 +632,7 @@ namespace pose_registration_plugins
             }
             else if (fabs(target_rela_pose_[1]) < 0.001)
             {
+                distance_vertical_ = target_rela_pose_[0];
                 relapos.position.x = distance_vertical_;
                 relapos.position.y = 0;
                 relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
@@ -642,7 +643,7 @@ namespace pose_registration_plugins
                 {
                     state_ = STA_ROUTE_VERTICAL;
                     get_vertical_direct_imu_ = YawImu;
-                    printf("at STA_PRE_HORIZON, !using_inertial, direct to STA_ROUTE_VERTICAL\n");
+                    printf("at STA_PRE_HORIZON, !using_inertial, direct to STA_ROUTE_VERTICAL, distance_vertical_=%f \n",distance_vertical_);
                 }
                 else
                 {
@@ -773,7 +774,8 @@ namespace pose_registration_plugins
                 {
                     state_ = STA_ROUTE_VERTICAL;
                     get_vertical_direct_imu_ = YawImu;
-                    printf("!using_inertial, direct to STA_ROUTE_VERTICAL\n");
+                    //updateCurrentPose(); 
+                    printf("!using_inertial, direct to STA_ROUTE_VERTICAL, distance_vertical_ = %f\n",distance_vertical_);
                 }
                 else
                 {

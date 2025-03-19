@@ -212,6 +212,15 @@ namespace pose_registration_plugins
                 charge_walk_pose_.push_back(0.0);
             }
         }  
+        if (!node_handle_->getParam("pose_registration/charge_point", charge_point_))
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                charge_point_.push_back(0.0);
+            }
+        }          
+        node_handle_->param("pose_registration/distance_charge_limit", distance_charge_limit_, 0.05);
+        node_handle_->param("pose_registration/need_charge_near", need_charge_near_, false);        
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
@@ -236,6 +245,7 @@ namespace pose_registration_plugins
         
         stateRegistration(CmdVel, yawFromImu);
         stateOffset(CmdVel, yawFromImu);
+        stateStart(CmdVel,yawFromImu);
     }
 
     void LocatePoseRegistration::standby(const whi_interfaces::PoseRegistrationGoalConstPtr& Goal)
@@ -263,6 +273,21 @@ namespace pose_registration_plugins
             offsets_[2] = PoseUtilities::toEuler(Goal->target_pose.pose.orientation)[2];
 
             state_ = STA_OFFSET_YAW;
+        }
+        else if (Goal->target_pose.header.frame_id == "plan_start") // flag of move offset
+        {
+            ROS_INFO("start plan_start");
+            bool needStartBack = false;
+            needStartBack = checkCurpointNearCharge();
+            if (needStartBack)
+            {
+                state_ = STA_START_BACK;
+                updateCurrentPose();
+            }
+            else
+            {
+                state_ = STA_DONE;
+            }
         }
         else
         {
@@ -556,6 +581,43 @@ namespace pose_registration_plugins
             {
                 CmdVel.linear.x = is_fine_tune_ ? PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_ * fine_tune_ratio_linear_ :PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
                 CmdVel.linear.y = 0.0;
+            }
+        }
+        else if (state_ == STA_ADJUST_LAST_ROT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (using_imu_)
+            {
+                angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
+                if (debug_count_ == 5)
+                {
+                    printf("in state STA_ADJUST_LAST_ROT, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
+                        angle_target_imu_, YawImu, angleDiff);
+                }
+            }
+            else
+            {
+                if (debug_count_ == 5)
+                {
+                    printf("in state STA_ADJUST_LAST_ROT, angle_target_imu_ = %f, angleDiff = %f\n",
+                        angle_target_imu_, angleDiff);
+                }
+            }              
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_PRE_HORIZON;
+                updateCurrentPose();
+                printf("STA_ADJUST_LAST_ROT finished, curyaw is: %f\n", YawImu);
+                printf("STA_ADJUST_LAST_ROT finished, to STA_PRE_HORIZON \n");
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z =  PoseUtilities::signOf(sin(angleDiff)) * 0.1 ;   // rot vel = 0.1
             }
         }
         else if (state_ == STA_PRE_HORIZON)
@@ -1967,6 +2029,125 @@ namespace pose_registration_plugins
         // }
     }
 
+    void LocatePoseRegistration::stateStart(geometry_msgs::Twist& CmdVel, double YawImu)
+    {
+        if (state_ == STA_START_BACK)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double routedis = PoseUtilities::distance(curpose,pose_standby_);
+            double distance_to = fabs(charge_walk_pose_[0]);
+            double extradis = distance_to + 0.1;
+            double distDiff = distance_to - routedis;
+            //行驶距离超出计算值 10cm ；偏差过大，说明前面对齐失败了
+            if (routedis > extradis)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.linear.y = 0.0;
+                state_ = STA_FAILED;
+                printf("fail at STA_START_BACK, routedis too far, something wrong\n");
+            }
+            else if (fabs(distDiff) < xy_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_START_PRE_ROT;
+                printf("STA_START_BACK finished, start STA_START_PRE_ROT\n"); 
+            }
+            else
+            {
+                CmdVel.linear.x = PoseUtilities::signOf(charge_walk_pose_[0]) * PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.y = 0.0;
+            }
+        }
+        else if (state_ == STA_START_PRE_ROT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            pose_target_.position.x = 0.0;
+            pose_target_.position.y = 0.0;
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + M_PI); 
+
+            angle_target_imu_ = YawImu + M_PI;   
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            state_ = STA_START_ROT;    
+            printf("STA_START_PRE_ROT finished, to sta STA_START_ROT, YawImu = %f, angle_target_imu_ = %f\n",
+                YawImu, angle_target_imu_);       
+
+        }
+        else if (state_ == STA_START_ROT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (using_imu_)
+            {
+                angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
+            }
+      
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_DONE;
+                updateCurrentPose();
+                printf("STA_START_ROT finished, YawImu = %f, have done STA_DONE\n", YawImu);
+            }
+            else
+            {
+                double near_tolerance_ = 0.0;
+                near_tolerance_ = angles::from_degrees(5);
+                if (fabs(angleDiff) < near_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * 0.05;
+                }
+                else
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vertical_to_rotvel_;
+                    prestate_ = state_;
+                }
+            }
+        }
+
+
+    }
+
+    bool LocatePoseRegistration::checkCurpointNearCharge()
+    {
+        bool isNearCharge = false;
+        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+        geometry_msgs::Pose curpose;
+        curpose.position.x = transBaselinkMap.transform.translation.x;
+        curpose.position.y = transBaselinkMap.transform.translation.y;
+
+        geometry_msgs::Pose charge_point_pose;
+        charge_point_pose.position.x = charge_point_[0];
+        charge_point_pose.position.y = charge_point_[1];
+        double posedis = PoseUtilities::distance(curpose,charge_point_pose);
+        ROS_INFO("curpose is : [%f,%f] , dis to chargepoint is:%f",curpose.position.x,curpose.position.y,posedis);
+        if (posedis < distance_charge_limit_)
+        {
+            ROS_INFO("posedis < distance_charge_limit_ ,need back");
+            isNearCharge = true;
+        }
+        else
+        {
+            ROS_INFO("posedis > distance_charge_limit_ ,don't need back");
+        }
+        if (!need_charge_near_)
+        {
+            ROS_INFO("!need_charge_near ,set false");
+            isNearCharge = false;
+        }
+        return isNearCharge;
+
+    }
+
+
     bool LocatePoseRegistration::checkcurpose()
     {
         geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
@@ -2396,6 +2577,21 @@ namespace pose_registration_plugins
                 printf("align right, next state\n");
                 printf("to STA_PRE_HORIZON\n");
                 state_ = STA_PRE_HORIZON;
+
+                // add here by zhouyue for adjust last rot
+                /*
+                printf("first to STA_ADJUST_LAST_ROT\n");
+                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
+                angles::shortest_angular_distance(registAngles[2], angleBaselink));
+                double yawFromImu = 0.0;
+                {
+                    const std::lock_guard<std::mutex> lock(mtx_imu_);
+                    yawFromImu = angleyaw_imu_;
+                }
+                angle_target_imu_ = angles::shortest_angular_distance(registAngles[2], yawFromImu);
+                state_ = STA_ADJUST_LAST_ROT;
+                */
                 return nullptr;
             }
 

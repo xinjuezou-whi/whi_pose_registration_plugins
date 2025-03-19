@@ -66,6 +66,8 @@ namespace pose_registration_plugins
         STA_ADJUST_REGIST,
         STA_ADJUST_AFTER_REGIST,
         STA_ADJUST_VERTICAL,
+
+        STA_ADJUST_LAST_ROT,
         STA_PRE_HORIZON,
         STA_TO_HORIZON,
         STA_PRE_ROT_ROUTE_HORIZON,
@@ -93,7 +95,10 @@ namespace pose_registration_plugins
         STA_OFFSET_Y,
         STA_OFFSET_FORWARD,
         STA_OFFSET_MOVING,
-        STA_OFFSET_X
+        STA_OFFSET_X,               
+        STA_START_BACK,         // PLAN_START
+        STA_START_PRE_ROT,
+        STA_START_ROT
     };
 
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
@@ -111,6 +116,7 @@ namespace pose_registration_plugins
     private:
         void stateRegistration(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateOffset(geometry_msgs::Twist& CmdVel, double YawImu);
+        void stateStart(geometry_msgs::Twist& CmdVel, double YawImu);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
         void subCallbackOdom(const nav_msgs::Odometry::ConstPtr& msg);
@@ -120,6 +126,7 @@ namespace pose_registration_plugins
         std::shared_ptr<void> registration(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void threadRegistration();
         void updatePre(double YawImu);
+        bool checkCurpointNearCharge();
 
     private:
         bool is_fixed_location_;
@@ -231,6 +238,9 @@ namespace pose_registration_plugins
 
         std::string packpath_;
         std::vector<double> charge_walk_pose_;
+        std::vector<double> charge_point_;
+        double distance_charge_limit_;
+        bool need_charge_near_{ false };        
 
         // offset
         std::array<double, 3> offsets_; // x, y, yaw

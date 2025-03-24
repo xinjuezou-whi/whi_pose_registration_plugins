@@ -355,6 +355,7 @@ namespace pose_registration_plugins
                 CmdVel.angular.z = 0.0;
                 if (prestate_ == STA_REGISTRATE_FINE)
                 {
+                    /*
                     if (fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_)
                     {
                         prestate_ = STA_ALIGN;
@@ -366,16 +367,24 @@ namespace pose_registration_plugins
                         distance_todrive_ = distance_vertical_;
                         state_ = STA_ADJUST_VERTICAL;
 
-                        printf("STA_REGISTRATE_FINE finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
+                        printf("STA_ALIGN finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
                     }                    
                     else
                     {
                         state_ = STA_PRE_ROT_ANGLE;
-                        printf("STA_REGISTRATE_FINE finished, start STA_PRE_ROT_ANGLE\n");
+                        printf("STA_ALIGN finished, start STA_PRE_ROT_ANGLE\n");
                     }
                     updateCurrentPose(); 
 
-                    printf("STA_REGISTRATE_FINE finished, YawImu = %f\n", YawImu);
+                    printf("STA_ALIGN finished, YawImu = %f\n", YawImu);
+                    */
+
+                    // new modify
+                    // determine the process in registration
+                    updateCurrentPose(); 
+                    prestate_ = STA_ALIGN;
+                    state_ = STA_WAIT_SCAN;
+                    printf("STA_ALIGN finished, YawImu = %f\n", YawImu);
                 }
                 else if (prestate_ == STA_REGISTRATE)
                 {
@@ -2618,7 +2627,7 @@ namespace pose_registration_plugins
                 yawFromImu = angleyaw_imu_;
             }
             angle_target_imu_ = angles::shortest_angular_distance(registAngles[2], yawFromImu);
-            printf("start sta_to_horizon, angle_target_imu_ = %f, now yawFromImu = %f\n",
+            printf("registration , angle_target_imu_ = %f, now yawFromImu = %f\n",
                 angle_target_imu_, yawFromImu);
 
             distance_vertical_ = transxy[0] - lazer_motor_diff_;
@@ -2628,6 +2637,25 @@ namespace pose_registration_plugins
             angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
             updateCurrentPose(); 
             pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
+
+            // new add , determine the process here 
+            if (fabs(registAngles[2]) < regist_yaw_thresh_)
+            {
+                if (fabs(distance_horizon_) < distthresh_horizon_)
+                {
+                    distance_todrive_ = distance_vertical_;
+                    state_ = STA_ADJUST_VERTICAL;
+
+                    printf("after registration, STA_ALIGN finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
+                }                    
+                else
+                {
+                    state_ = STA_PRE_ROT_ANGLE;
+                    printf("after registration, STA_ALIGN finished, start STA_PRE_ROT_ANGLE\n");
+                }
+
+                return nullptr;
+            }
 
             state_ = STA_ALIGN;
         }

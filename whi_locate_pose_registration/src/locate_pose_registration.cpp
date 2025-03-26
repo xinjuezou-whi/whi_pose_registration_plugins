@@ -672,13 +672,6 @@ namespace pose_registration_plugins
                     get_vertical_direct_imu_ = YawImu;
                     printf("at STA_PRE_HORIZON, !using_inertial, direct to STA_ROUTE_VERTICAL, distance_vertical_=%f \n",distance_vertical_);
                 }
-                else
-                {
-                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                    printf("at STA_PRE_HORIZON, using_inertial, STA_PRE_ROT_ROUTE_VERTICAL\n");
-                    printf("STA_PRE_HORIZON finished, target_rela_pose_[1] = 0, start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f, %f]\n",
-                        pose_end_.position.x, pose_end_.position.y); 
-                }
             }
             else
             {
@@ -803,14 +796,7 @@ namespace pose_registration_plugins
                     get_vertical_direct_imu_ = YawImu;
                     //updateCurrentPose(); 
                     printf("!using_inertial, direct to STA_ROUTE_VERTICAL, distance_vertical_ = %f\n",distance_vertical_);
-                }
-                else
-                {
-                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                    printf("using_inertial, STA_PRE_ROT_ROUTE_VERTICAL\n");
-                    printf("STA_PRE_NEXT finish, target_rela_pose_[1] = 0, start STA_PRE_ROT_ROUTE_VERTICAL, target pose_end_: [%f, %f]\n",
-                        pose_end_.position.x, pose_end_.position.y); 
-                }                
+                }           
 
             }
             else
@@ -828,19 +814,6 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 7)
-                {
-                    printf("in state STA_TO_HORIZON, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff);
-                }
-            }
-            else
-            {
-                if (debug_count_ == 7)
-                {
-                    printf("in state STA_TO_HORIZON, angle_target_imu_ = %f, angleDiff = %f\n",
-                        angle_target_imu_, angleDiff);
-                }
             }
             if (fabs(angleDiff) < yaw_tolerance_)
             {
@@ -854,11 +827,6 @@ namespace pose_registration_plugins
                     state_ = STA_ROUTE_HORIZON;
                     printf("!using_inertial_, direct to STA_ROUTE_HORIZON\n");
 
-                }
-                else
-                {
-                    state_ = STA_PRE_ROT_ROUTE_HORIZON;
-                    printf("using_inertial_, to STA_PRE_ROT_ROUTE_HORIZON\n");
                 }
                 updateCurrentPose(); 
                 get_horizon_direct_imu_ = YawImu;
@@ -882,65 +850,6 @@ namespace pose_registration_plugins
                     printf("angular.z: %f\n", CmdVel.angular.z);
                 }
             }
-        }
-        else if (state_ == STA_PRE_ROT_ROUTE_HORIZON)
-        {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            updateCurrentPose();
-            vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
-            vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
-            geometry_msgs::Point pntEnd,pntCur,pntForward;
-            pntEnd.x = pose_end_.position.x;
-            pntEnd.y = pose_end_.position.y;
-            pntCur.x = vertical_start_pose_.position.x;
-            pntCur.y = vertical_start_pose_.position.y;    
-            pntForward.x = pntCur.x + 0.2;
-            pntForward.y = pntCur.y;
-            auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
-            auto vecForward = PoseUtilities::createVector2D(pntCur,pntForward);
-            double targetYaw = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
-            printf("targetYaw = %f, curYaw = %f\n", targetYaw, PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2]);
-            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, targetYaw);
-            double angleDiff = angles::shortest_angular_distance(
-                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-            printf("angleDiff = %f\n", angleDiff);
-            state_ = STA_ROT_ROUTE_HORIZON;
-            printf("STA_PRE_ROT_ROUTE_HORIZON finished, start STA_ROT_ROUTE_HORIZON, vertical_start_pose_:[%f ,%f]\n",
-                vertical_start_pose_.position.x ,vertical_start_pose_.position.y);
-
-        }
-        else if (state_ == STA_ROT_ROUTE_HORIZON)
-        {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            double angleDiff = angles::shortest_angular_distance(
-                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-
-            if (fabs(angleDiff) < yaw_tolerance_)
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = 0.0;
-
-                state_ = STA_PRE_ROUTE_HORIZON;             
-                printf("STA_ROT_ROUTE_HORIZON finished, start STA_PRE_ROUTE_HORIZON\n");
-            }
-            else
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;          
-            }
-        }
-        else if (state_ == STA_PRE_ROUTE_HORIZON)
-        {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            updateCurrentPose();
-            vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
-            vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
-
-            get_horizon_imu_ =  get_align_imu_ + leftorright_ * 0.5 * M_PI;
-            get_horizon_angle_ = get_align_angle_ + leftorright_ * 0.5 * M_PI;
-            state_ = STA_ROUTE_HORIZON;
-            printf("curpose is: [%f, %f]\n", vertical_start_pose_.position.x, vertical_start_pose_.position.y);
-            printf("STA_PRE_ROUTE_HORIZON finished, start STA_ROUTE_HORIZON\n");
         }
         else if (state_ == STA_ROUTE_HORIZON)
         {
@@ -994,159 +903,6 @@ namespace pose_registration_plugins
                     }
                 }
             }
-            else
-            {
-                // inertial navigation logic
-                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                geometry_msgs::Pose curpose;
-                curpose.position.x = transBaselinkMap.transform.translation.x;
-                curpose.position.y = transBaselinkMap.transform.translation.y;
-                double diffX = pose_end_.position.x - curpose.position.x;
-                double diffY = pose_end_.position.y - curpose.position.y;
-                double diffAngle = get_horizon_angle_ - PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                if (using_imu_)
-                {
-                    diffAngle = angles::shortest_angular_distance(YawImu, get_horizon_imu_);
-                }
-                double curdis = PoseUtilities::distance(curpose,pose_end_);
-                if (fabs(diffX) < xy_tolerance_ && fabs(diffY) < xy_tolerance_ && substate != "endrot"  )
-                {
-                    CmdVel.linear.x = 0.0;
-                    CmdVel.angular.z = 0.0;
-                    if (fabs(diffAngle) <=  yaw_tolerance_)
-                    {
-                        state_ = STA_PRE_VERTICAL;
-                        printf("diffX diffY min, STA_ROUTE_HORIZON finished, to STA_PRE_VERTICAL\n");
-                        substate = "direct" ;
-                        return ;
-                    }
-                    else 
-                    {
-                        substate = "pre_endrot";
-                        printf("diffX diffY min, start pre_endrot\n");
-                        //angle_target_imu_ = getrightImu(angle_target_imu_);                              
-                    }
-                }
-
-                geometry_msgs::Point pntEnd,pntCur,pntStart,pntNext,pntCross;
-                pntEnd.x = pose_end_.position.x;
-                pntEnd.y = pose_end_.position.y;
-                pntCur.x = curpose.position.x;
-                pntCur.y = curpose.position.y;       
-                pntStart.x = vertical_start_pose_.position.x;
-                pntStart.y = vertical_start_pose_.position.y;    
-                geometry_msgs::Pose nextPose,poseDelta;
-                poseDelta.position.x = inertial_xyvel_ * predict_period_count_ / controller_frequency_;
-                poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                nextPose = PoseUtilities::applyTransform(poseDelta, transBaselinkMap);
-                pntNext.x = nextPose.position.x;
-                pntNext.y = nextPose.position.y;
-
-                //求当前点到目标路径垂直交点             
-                double k1 = (pntEnd.y - pntStart.y)/(pntEnd.x - pntStart.x);
-                double k2 = (pntStart.x - pntEnd.x)/(pntEnd.y - pntStart.y);
-                pntCross.x = (pntCur.y - pntStart.y + k1 * pntStart.x - k2 * pntCur.x)/(k1 - k2);
-                pntCross.y = k1*(pntCross.x - pntStart.x) + pntStart.y;
-
-                auto vecCrossNext = PoseUtilities::createVector2D(pntCross, pntNext);
-                auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
-                auto vecStartEnd = PoseUtilities::createVector2D(pntStart,pntEnd);
-                auto vecStartNext = PoseUtilities::createVector2D(pntStart,pntNext);
-                auto vecStartCur = PoseUtilities::createVector2D(pntStart,pntCur);
-                auto vecCurNext = PoseUtilities::createVector2D(pntCur,pntNext);
-
-                double nextAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd, vecCrossNext);
-                double startNextAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd, vecCurNext); 
-                double disCrossNext = PoseUtilities::distance(pntNext,pntCross);
-                double nextDelta = disCrossNext * sin(fabs(nextAngle));
-                double curAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd,vecStartCur);
-                //ROS_INFO("nextAngle: %f, nextDelta: %f, curAngle: %f ,startNextAngle:%f", nextAngle, nextDelta, curAngle,startNextAngle);
-                if(PoseUtilities::signOf(nextAngle) != PoseUtilities::signOf(curAngle))
-                {
-                    //ROS_INFO("------------ +++++++++++++signOf(nextAngle) != signOf(curAngle)  --------");
-                }
-
-                double routedis = PoseUtilities::distance(pntStart,pntEnd);
-                double curStartdis = PoseUtilities::distance(pntCur,pntStart);
-
-                //double forwardAngle = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
-                double curendAngle = PoseUtilities::angleBetweenVectors2D(vecCurEnd, vecStartEnd);
-                if (substate == "direct" )
-                {
-                    if (fabs(curendAngle) >= M_PI / 2 || curStartdis >= routedis)
-                    {
-                        substate = "pre_endrot";
-                        printf("fabs(delta) >= M_PI/2, start pre_endrot, curendAngle: %f\n", curendAngle);   
-                        printf("curdis: %f, routedis: %f\n", curStartdis, routedis);  
-                    }
-                    else
-                    {
-                        CmdVel.linear.x = inertial_xyvel_;
-                        if (nextDelta > predict_dist_thresh_ || diffAngle > yaw_tolerance_ * 2)
-                        {
-                            if(PoseUtilities::signOf(nextAngle) == PoseUtilities::signOf(startNextAngle))
-                            {
-                                CmdVel.angular.z = -1 * PoseUtilities::signOf(nextAngle) * inertial_rotvel_ *
-                                    fabs(nextAngle) / 5.0;
-                            }
-                            else
-                            {
-                                // invert direction 
-                                CmdVel.angular.z = PoseUtilities::signOf(nextAngle) * inertial_rotvel_ *
-                                    fabs(nextAngle) / 5.0 *1.5 ;
-                            }
-                        }
-                        else    
-                        {
-                            CmdVel.angular.z = 0.0;
-                        }
-                        CmdVel.angular.z = fabs(CmdVel.angular.z) > inertial_rotvel_ ?
-                            PoseUtilities::signOf(CmdVel.angular.z) * inertial_rotvel_ : CmdVel.angular.z;
-                    }
-                }
-                else if (substate == "pre_endrot")
-                {
-                    //pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_); 
-                    //angle_target_imu_ = get_align_imu_; 
-                    state_ = STA_PRE_VERTICAL;
-                    substate = "direct";
-                }
-                else if (substate == "endrot" )
-                {
-                    geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-                    double angleDiff = angles::shortest_angular_distance(
-                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-                    if (using_imu_)
-                    {
-                        angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                    }
-                    if (fabs(angleDiff) < yaw_tolerance_)
-                    {
-                        CmdVel.linear.x = 0.0;
-                        CmdVel.angular.z = 0.0;
-
-                        if (fabs(target_rela_pose_[2]) < 0.01)
-                        {
-                            state_ = STA_PRE_NEXT;
-                            printf("endrot STA_ROUTE_VERTICAL finished, to STA_PRE_NEXT\n");
-                        }
-                        else
-                        {
-                            state_ = STA_PRE_ORIENTATION;
-                            printf("endrot STA_ROUTE_VERTICAL finished, to sta STA_PRE_ORIENTATION\n");
-
-                        }
-                        substate = "direct" ;
-                    }
-                    else
-                    {
-                        CmdVel.linear.x = 0.0;
-                        CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;
-                        printf("in endrot, rot\n");                
-                    }
-                }
-            }
         }
         else if (state_ == STA_PRE_VERTICAL)
         {
@@ -1183,19 +939,6 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_TO_VERTICAL, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff);
-                }
-            }
-            else
-            {
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_TO_VERTICAL, angle_target_imu_ = %f, angleDiff = %f\n",
-                        angle_target_imu_, angleDiff);
-                }
             }
 
             if (fabs(angleDiff) < yaw_tolerance_)
@@ -1209,11 +952,6 @@ namespace pose_registration_plugins
                     state_ = STA_ROUTE_VERTICAL;
                     printf("STA_TO_VERTICAL finished, direct to STA_ROUTE_VERTICAL, now YawImu = %f\n", YawImu);
                     get_vertical_direct_imu_ = YawImu;
-                }
-                else
-                {
-                    state_ = STA_PRE_ROT_ROUTE_VERTICAL;
-                    printf("STA_TO_VERTICAL finished, start STA_PRE_ROT_ROUTE_VERTICAL\n");
                 }
                 updateCurrentPose(); 
             }
@@ -1236,87 +974,7 @@ namespace pose_registration_plugins
                     printf("angular.z: %f\n", CmdVel.angular.z);
                 }                
             }
-        }      
-        else if (state_ == STA_PRE_ROT_ROUTE_VERTICAL)
-        {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            if (prestate_ == STA_TO_VERTICAL)
-            {
-                geometry_msgs::Pose relapos;
-                relapos.position.x = distance_vertical_;
-                relapos.position.y = 0;
-                relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                geometry_msgs::TransformStamped subtrans = transBaselinkMap;
-                if (is_fixed_location_)
-                {
-                    subtrans.transform.translation.x = pose_end_.position.x;
-                    subtrans.transform.translation.y = pose_end_.position.y;                
-                    subtrans.transform.rotation = getfea_cur_pose_.orientation;
-                }
-                else
-                {                   
-                    subtrans.transform.rotation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_);
-                }
-                pose_end_ = PoseUtilities::applyTransform(relapos, subtrans);
-            }    
-
-            // align the heading direction of target 
-            updateCurrentPose();
-            vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
-            vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
-            printf("STA_PRE_ROT_ROUTE_VERTICAL finished, start STA_ROT_ROUTE_VERTICAL, vertical_start_pose_: [%f, %f]\n",
-                vertical_start_pose_.position.x ,vertical_start_pose_.position.y );
-            printf("pose_end_ is: [%f, %f]\n", pose_end_.position.x, pose_end_.position.y);
-            geometry_msgs::Point pntEnd,pntCur,pntForward;
-            pntEnd.x = pose_end_.position.x;
-            pntEnd.y = pose_end_.position.y;
-            pntCur.x = vertical_start_pose_.position.x;
-            pntCur.y = vertical_start_pose_.position.y;    
-            pntForward.x = pntCur.x + 0.2;
-            pntForward.y = pntCur.y;
-            auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
-            auto vecForward = PoseUtilities::createVector2D(pntCur,pntForward);
-            double targetYaw = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
-            printf("in cal targetYaw is: %f\n", targetYaw);
-            if (route_vertical_direct_ == "inverse")
-            {
-                targetYaw += M_PI;
-                printf("in call inverse targetYaw is: %f\n", targetYaw);
-                get_align_imu_ = get_align_imu_ + M_PI;
-                get_align_angle_ = get_align_angle_ + M_PI  ; 
-                get_align_imu_ = getrightImu(get_align_imu_);               
-            }
-            printf("targetYaw = %f, curYaw = %f\n", targetYaw, PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2]);
-            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, targetYaw);
-            double angleDiff = angles::shortest_angular_distance(
-                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-            printf("angleDiff = %f\n", angleDiff);
-            state_ = STA_ROT_ROUTE_VERTICAL;
-        }  
-        else if (state_ == STA_ROT_ROUTE_VERTICAL)
-        {
-            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-            double angleDiff = angles::shortest_angular_distance(
-                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-
-            if (fabs(angleDiff) < yaw_tolerance_)
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = 0.0;
-
-                state_ = STA_ROUTE_VERTICAL;
-                updateCurrentPose(); 
-                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
-                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;                
-                printf("STA_ROT_ROUTE_VERTICAL finished, start STA_ROUTE_VERTICAL, vertical_start_pose_:[%f ,%f]\n",
-                    vertical_start_pose_.position.x ,vertical_start_pose_.position.y );
-            }
-            else
-            {
-                CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;          
-            }
-        }        
+        }              
         else if (state_ == STA_ROUTE_VERTICAL)
         {
             static std::string substate = "direct" ;
@@ -1396,177 +1054,6 @@ namespace pose_registration_plugins
                     {
                         CmdVel.angular.z = 0 ;
                     }                    
-                }
-            }
-            else
-            {
-                // inertial navigation logic
-                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                geometry_msgs::Pose curpose;
-                curpose.position.x = transBaselinkMap.transform.translation.x;
-                curpose.position.y = transBaselinkMap.transform.translation.y;
-                double diffX = pose_end_.position.x - curpose.position.x;
-                double diffY = pose_end_.position.y - curpose.position.y;
-                double diffAngle = get_align_angle_ - PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-                if (using_imu_)
-                {
-                    diffAngle = angles::shortest_angular_distance(YawImu, get_align_imu_);
-                }
-                double curdis = PoseUtilities::distance(curpose,pose_end_);
-                if (fabs(diffX) < xy_tolerance_ && fabs(diffY) < xy_tolerance_ && substate != "endrot")
-                {
-                    CmdVel.linear.x = 0.0;
-                    CmdVel.angular.z = 0.0;
-                    if (fabs(target_rela_pose_[2]) < 0.01)
-                    {
-                        if (fabs(diffAngle) <=  yaw_tolerance_)
-                        {
-                            state_ = STA_PRE_NEXT;
-                            printf("diffX diffY min, STA_ROUTE_VERTICAL finished, to STA_PRE_NEXT\n");
-                            substate = "direct" ;
-                            lastforward = 0;
-                            return ;
-                        }
-                        else 
-                        {
-                            substate = "pre_endrot";
-                            printf("diffX diffY min, start pre_endrot\n");
-                            //angle_target_imu_ = getrightImu(angle_target_imu_);                              
-                        }
-                    }
-                    else
-                    {
-                        if (fabs(diffAngle) <=  yaw_tolerance_)
-                        {
-                            state_ = STA_PRE_ORIENTATION;
-                            printf("diffX diffY min, STA_ROUTE_VERTICAL finished, to sta STA_PRE_ORIENTATION\n");
-                            substate = "direct" ;
-                            lastforward = 0;
-                            return ;
-                        }
-                        else 
-                        {
-                            substate = "pre_endrot"; 
-                        }                        
-                    }
-                }
-
-                geometry_msgs::Point pntEnd,pntCur,pntStart,pntNext,pntCross;
-                pntEnd.x = pose_end_.position.x;
-                pntEnd.y = pose_end_.position.y;
-                pntCur.x = curpose.position.x;
-                pntCur.y = curpose.position.y;       
-                pntStart.x = vertical_start_pose_.position.x;
-                pntStart.y = vertical_start_pose_.position.y;    
-                geometry_msgs::Pose nextPose,poseDelta;
-                poseDelta.position.x = direction * inertial_xyvel_ * predict_period_count_ / controller_frequency_;
-                poseDelta.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
-                nextPose = PoseUtilities::applyTransform(poseDelta, transBaselinkMap);
-                pntNext.x = nextPose.position.x;
-                pntNext.y = nextPose.position.y;
-
-                //求当前点到目标路径垂直交点             
-                double k1 = (pntEnd.y - pntStart.y)/(pntEnd.x - pntStart.x);
-                double k2 = (pntStart.x - pntEnd.x)/(pntEnd.y - pntStart.y);
-                pntCross.x = (pntCur.y - pntStart.y + k1 * pntStart.x - k2 * pntCur.x)/(k1 - k2);
-                pntCross.y = k1*(pntCross.x - pntStart.x) + pntStart.y;
-
-                auto vecCrossNext = PoseUtilities::createVector2D(pntCross, pntNext);
-                auto vecCurEnd = PoseUtilities::createVector2D(pntCur,pntEnd);
-                auto vecStartEnd = PoseUtilities::createVector2D(pntStart,pntEnd);
-                auto vecStartNext = PoseUtilities::createVector2D(pntStart,pntNext);
-                auto vecStartCur = PoseUtilities::createVector2D(pntStart,pntCur);
-                auto vecCurNext = PoseUtilities::createVector2D(pntCur,pntNext);
-
-                double nextAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd, vecCrossNext);
-                double startNextAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd, vecCurNext); 
-                double disCrossNext = PoseUtilities::distance(pntNext,pntCross);
-                double nextDelta = disCrossNext * sin(fabs(nextAngle));
-                double curAngle = PoseUtilities::angleBetweenVectors2D(vecStartEnd,vecStartCur);
-                //ROS_INFO("nextAngle: %f, nextDelta: %f, curAngle: %f ,startNextAngle:%f", nextAngle, nextDelta, curAngle,startNextAngle);
-                if(PoseUtilities::signOf(nextAngle) != PoseUtilities::signOf(curAngle))
-                {
-                    //ROS_INFO("------------ +++++++++++++signOf(nextAngle) != signOf(curAngle)  --------");
-                }
-
-                double routedis = PoseUtilities::distance(pntStart,pntEnd);
-                double curStartdis = PoseUtilities::distance(pntCur,pntStart);
-
-                //double forwardAngle = PoseUtilities::angleBetweenVectors2D(vecForward, vecCurEnd);
-                double curendAngle = PoseUtilities::angleBetweenVectors2D(vecCurEnd, vecStartEnd);
-                if (substate == "direct" )
-                {
-                    if (fabs(curendAngle) >= M_PI / 2 || curStartdis >= routedis)
-                    {
-                        substate = "pre_endrot";
-                        printf("fabs(delta) >= M_PI/2, start pre_endrot, curendAngle: %f\n", curendAngle);   
-                        printf("curdis: %f, routedis: %f\n", curStartdis, routedis);  
-                    }
-                    else
-                    {
-                        CmdVel.linear.x = direction * inertial_xyvel_;
-                        if (nextDelta > predict_dist_thresh_ || diffAngle > yaw_tolerance_ * 2)
-                        {
-                            if(PoseUtilities::signOf(nextAngle) == PoseUtilities::signOf(startNextAngle))
-                            {
-                                CmdVel.angular.z = -1 * PoseUtilities::signOf(nextAngle) * inertial_rotvel_ *
-                                    fabs(nextAngle) / 5.0;
-                            }
-                            else
-                            {
-                                // invert direction 
-                                CmdVel.angular.z = PoseUtilities::signOf(nextAngle) * inertial_rotvel_ *
-                                    fabs(nextAngle) / 5.0 *1.5 ;
-                            }
-                        }
-                        else    
-                        {
-                            CmdVel.angular.z = 0.0;
-                        }
-                        CmdVel.angular.z = fabs(CmdVel.angular.z) > inertial_rotvel_ ?
-                            PoseUtilities::signOf(CmdVel.angular.z) * inertial_rotvel_ : CmdVel.angular.z;
-                    }
-                }
-                else if (substate == "pre_endrot")
-                {
-                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_); 
-                    angle_target_imu_ = get_align_imu_; 
-                    substate = "endrot";
-                }
-                else if (substate == "endrot" )
-                {
-                    geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-                    double angleDiff = angles::shortest_angular_distance(
-                        PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
-                    if (using_imu_)
-                    {
-                        angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                    }
-                    if (fabs(angleDiff) < yaw_tolerance_)
-                    {
-                        CmdVel.linear.x = 0.0;
-                        CmdVel.angular.z = 0.0;
-
-                        if (fabs(target_rela_pose_[2]) < 0.01)
-                        {
-                            state_ = STA_PRE_NEXT;
-                            printf("endrot STA_ROUTE_VERTICAL finished, to STA_PRE_NEXT\n");
-                        }
-                        else
-                        {
-                            state_ = STA_PRE_ORIENTATION;
-                            printf("endrot STA_ROUTE_VERTICAL finished, to sta STA_PRE_ORIENTATION\n");
-
-                        }
-                        substate = "direct" ;
-                        lastforward = 0;
-                    }
-                    else
-                    {
-                        CmdVel.linear.x = 0.0;
-                        CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * rotvel_;         
-                    }
                 }
             }
         }
@@ -2574,12 +2061,6 @@ namespace pose_registration_plugins
                 angle_target_imu_, yawFromImu);
 
             angleDiff_g_ = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-            printf("angleDiff_g_ is %f \n", angleDiff_g_);
-
-            // debug start   增加一个角度，使得程序一直循环，看看有没有内存泄漏
-            // angle_target_imu_ += 0.06 ;   
-            // debug end 
-
             distance_vertical_ = transxy[0] - lazer_motor_diff_;
             distance_horizon_ = transxy[1];
             printf("distance_vertical = %f, distance_horizon_ = %f\n", distance_vertical_, distance_horizon_);

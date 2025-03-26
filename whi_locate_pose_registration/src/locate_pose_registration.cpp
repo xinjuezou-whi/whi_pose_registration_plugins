@@ -220,7 +220,10 @@ namespace pose_registration_plugins
             }
         }          
         node_handle_->param("pose_registration/distance_charge_limit", distance_charge_limit_, 0.05);
-        node_handle_->param("pose_registration/need_charge_near", need_charge_near_, false);        
+        node_handle_->param("pose_registration/need_charge_near", need_charge_near_, false);      
+        node_handle_->param("pose_registration/LocatePose/rot_back_yaw_tolerance", rot_back_yaw_tolerance_, 0.5);
+        node_handle_->param("pose_registration/LocatePose/rot_min_vel", rot_min_vel_, 0.05); 
+        rot_back_yaw_tolerance_ = angles::from_degrees(rot_back_yaw_tolerance_); 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
         sub_imu_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::Imu>(
@@ -355,30 +358,6 @@ namespace pose_registration_plugins
                 CmdVel.angular.z = 0.0;
                 if (prestate_ == STA_REGISTRATE_FINE)
                 {
-                    /*
-                    if (fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_)
-                    {
-                        prestate_ = STA_ALIGN;
-                        state_ = STA_WAIT_SCAN;
-                        printf("STA_ALIGN finished, fabs(distance_horizon_) < regist_linear_y_thresh_ && fabs(distance_vertical_) < regist_linear_x_thresh_, start STA_WAIT_SCAN\n");
-                    }
-                    else if (fabs(distance_horizon_) < distthresh_horizon_)
-                    {
-                        distance_todrive_ = distance_vertical_;
-                        state_ = STA_ADJUST_VERTICAL;
-
-                        printf("STA_ALIGN finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
-                    }                    
-                    else
-                    {
-                        state_ = STA_PRE_ROT_ANGLE;
-                        printf("STA_ALIGN finished, start STA_PRE_ROT_ANGLE\n");
-                    }
-                    updateCurrentPose(); 
-
-                    printf("STA_ALIGN finished, YawImu = %f\n", YawImu);
-                    */
-
                     // new modify
                     // determine the process in registration
                     updateCurrentPose(); 
@@ -395,7 +374,10 @@ namespace pose_registration_plugins
             else
             {
                 CmdVel.linear.x = 0.0;
-                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                //CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                double vel_z = fabs(angleDiff) / fabs(angleDiff_g_) * rotvel_;
+                vel_z = vel_z > rot_min_vel_ ? vel_z : rot_min_vel_;
+                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vel_z;
             }
         }
         else if (state_ == STA_PRE_ROT_ANGLE)
@@ -409,7 +391,7 @@ namespace pose_registration_plugins
                 PoseUtilities::signOf(distance_horizon_) * zig_angle_, YawImu);
 
             state_ = STA_ROT_ANGLE;
-            printf("STA_PRE_ROT_ANGLE finished, start STA_ROT_ANGLE, curyaw is: %f\n", YawImu);
+            printf("STA_PRE_ROT_ANGLE finished, start STA_ROT_ANGLE, curyaw is: %f ,angle_target_imu_ is: %f\n", YawImu, angle_target_imu_);
         }
         else if (state_ == STA_ROT_ANGLE)
         {
@@ -419,21 +401,8 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ROT_ANGLE, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff);
-                }
-            }
-            else
-            {
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ROT_ANGLE, angle_target_imu_ = %f, angleDiff = %f\n",
-                        angle_target_imu_, angleDiff);
-                }
-            }              
-            if (fabs(angleDiff) < yaw_tolerance_)
+            }       
+            if (fabs(angleDiff) < rot_back_yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
@@ -499,7 +468,7 @@ namespace pose_registration_plugins
             angle_target_imu_ = getrightImu(angle_target_imu_);
             updateCurrentPose(); 
             state_ = STA_ROT_VERTICAL;
-            printf("STA_PRE_ROT_VERTICAL finished, start STA_ROT_VERTICAL, curyaw is: %f\n", YawImu);   
+            printf("STA_PRE_ROT_VERTICAL finished, start STA_ROT_VERTICAL, curyaw is: %f, angle_target_imu_ is: %f\n", YawImu, angle_target_imu_);   
         }
         else if (state_ == STA_ROT_VERTICAL)
         {
@@ -510,7 +479,7 @@ namespace pose_registration_plugins
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
             }            
-            if (fabs(angleDiff) < yaw_tolerance_)
+            if (fabs(angleDiff) < rot_back_yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;
@@ -521,7 +490,7 @@ namespace pose_registration_plugins
                 updateCurrentPose(); 
                 distance_todrive_ = fabs(distance_horizon_) / tan(zig_angle_) + distance_vertical_; //在这里计算
                 printf("STA_ROT_VERTICAL finished, curyaw is: %f\n", YawImu);
-                printf("STA_ROT_VERTICAL finished, prepare for STA_ADJUST_REGIST, cal for distance_todrive_ = %f\n", distance_todrive_);
+                //printf("STA_ROT_VERTICAL finished, prepare for STA_ADJUST_REGIST, cal for distance_todrive_ = %f\n", distance_todrive_);
             }
             else
             {
@@ -600,20 +569,7 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ADJUST_LAST_ROT, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff);
-                }
-            }
-            else
-            {
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ADJUST_LAST_ROT, angle_target_imu_ = %f, angleDiff = %f\n",
-                        angle_target_imu_, angleDiff);
-                }
-            }              
+            }           
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -1027,7 +983,7 @@ namespace pose_registration_plugins
                     CmdVel.linear.x = PoseUtilities::signOf(distDiff) * horizon_offset_vel_;
                     CmdVel.linear.y = 0.0;
                     auto imuangleDiff = angles::shortest_angular_distance(YawImu, get_horizon_direct_imu_);
-                    printf("imuangleDiff is: %f\n", imuangleDiff);
+                    //printf("imuangleDiff is: %f\n", imuangleDiff);
                     if ( fabs(imuangleDiff) > imu_adjust_rot_thresh_ )
                     {
                         CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
@@ -1431,7 +1387,7 @@ namespace pose_registration_plugins
                     CmdVel.linear.y = 0.0;
 
                     auto imuangleDiff = angles::shortest_angular_distance(YawImu, get_vertical_direct_imu_ + angles::from_degrees(rot_offset_) );
-                    printf("imuangleDiff is: %f\n", imuangleDiff);
+                    //printf("imuangleDiff is: %f\n", imuangleDiff);
                     if ( fabs(imuangleDiff) > imu_adjust_rot_thresh_ )
                     {
                         CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
@@ -1637,20 +1593,7 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 7)
-                {
-                    printf("in state STA_TO_ORIENTATION, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff);
-                }
-            }
-            else
-            {
-                if (debug_count_ == 7)
-                {
-                    printf("in state STA_TO_ORIENTATION, pose_target_angle = %f, curbaselinkangle = %f,angleDiff = %f\n",
-                        PoseUtilities::toEuler(pose_target_.orientation)[2],PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], angleDiff);
-                }
-            }              
+            }            
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -2630,6 +2573,13 @@ namespace pose_registration_plugins
             printf("registration , angle_target_imu_ = %f, now yawFromImu = %f\n",
                 angle_target_imu_, yawFromImu);
 
+            angleDiff_g_ = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+            printf("angleDiff_g_ is %f \n", angleDiff_g_);
+
+            // debug start   增加一个角度，使得程序一直循环，看看有没有内存泄漏
+            // angle_target_imu_ += 0.06 ;   
+            // debug end 
+
             distance_vertical_ = transxy[0] - lazer_motor_diff_;
             distance_horizon_ = transxy[1];
             printf("distance_vertical = %f, distance_horizon_ = %f\n", distance_vertical_, distance_horizon_);
@@ -2646,12 +2596,12 @@ namespace pose_registration_plugins
                     distance_todrive_ = distance_vertical_;
                     state_ = STA_ADJUST_VERTICAL;
 
-                    printf("after registration, STA_ALIGN finished, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
+                    printf("after registration, STA_ALIGN met, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
                 }                    
                 else
                 {
                     state_ = STA_PRE_ROT_ANGLE;
-                    printf("after registration, STA_ALIGN finished, start STA_PRE_ROT_ANGLE\n");
+                    printf("after registration, STA_ALIGN met, start STA_PRE_ROT_ANGLE\n");
                 }
 
                 return nullptr;

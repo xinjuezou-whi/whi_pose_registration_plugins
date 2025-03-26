@@ -240,7 +240,10 @@ namespace pose_registration_plugins
         std::vector<double> charge_walk_pose_;
         std::vector<double> charge_point_;
         double distance_charge_limit_;
-        bool need_charge_near_{ false };        
+        bool need_charge_near_{ false };   
+        double rot_min_vel_{ 0.02 };
+        double rot_back_yaw_tolerance_{ 0.5 }; 
+        double angleDiff_g_;    
 
         // offset
         std::array<double, 3> offsets_; // x, y, yaw

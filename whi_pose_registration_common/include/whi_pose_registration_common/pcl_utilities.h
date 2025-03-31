@@ -542,8 +542,8 @@ public:
         pointcloud::Ptr target(new pointcloud);
         source = voxel_grid_fiter(source_cloud, samplecoeff); // 下采样滤波
         target = voxel_grid_fiter(target_cloud, samplecoeff); // 下采样滤波
-        printf("[regist_sacia_ndt] downsampled source cloud to: %d\n", source->points.size());
-        printf("[regist_sacia_ndt] downsampled target cloud to: %d\n", target->points.size());
+        //printf("[regist_sacia_ndt] downsampled source cloud to: %d\n", source->points.size());
+        //printf("[regist_sacia_ndt] downsampled target cloud to: %d\n", target->points.size());
         if (source->points.size() < 10 )
         {    
             ROS_ERROR("source sample get count < 10, wrong");
@@ -650,7 +650,7 @@ public:
         ne.setViewPoint(100, 100, 0);
 
         //-----------------自定义 计算法向量---------------
-        cout << "Calculating normals for scale1..." << scale1 << endl;
+        //cout << "Calculating normals for scale1..." << scale1 << endl;
         pcl::PointCloud<pcl::PointNormal>::Ptr normals_small_scale(new pcl::PointCloud<pcl::PointNormal>);
 
         int smallscale = static_cast<int>(std::floor(scale1));
@@ -718,7 +718,7 @@ public:
         }
 
         // 大尺度辅助半径
-        cout << "Calculating normals for scale2..." << scale2 << endl;
+        //cout << "Calculating normals for scale2..." << scale2 << endl;
         pcl::PointCloud<pcl::PointNormal>::Ptr normals_large_scale(new pcl::PointCloud<pcl::PointNormal>);
         int largescale = static_cast<int>(std::floor(scale2));
         normalvec << 0.0f, 0.0f, 1.0f;
@@ -803,6 +803,7 @@ public:
         don.computeFeature(*doncloud);//对输入点集，计算DON特征向量，并输出
 
         //------------------输出一些不同的曲率--------------------------------
+        /*
         std::cout << "total points: " << doncloud->size() << ", output sampled curvatures for reference:" << std::endl;
         int step = doncloud->size() / 10;
         std::cout << "[";
@@ -811,9 +812,10 @@ public:
             std::cout << doncloud->points[i].curvature << ",";
         }
         std::cout << "]" << std::endl;
+        */
 
         //-------------------------按大小滤波-----------------------------
-        std::cout << "filtering out DoN by curvature greater than " << threshold << endl;
+        //std::cout << "filtering out DoN by curvature greater than " << threshold << endl;
         // 创建条件滤波函数
         pcl::ConditionOr<pcl::PointNormal>::Ptr range_cond(new pcl::ConditionOr<pcl::PointNormal>());//确定点是否属于满足设定的条件
         range_cond->addComparison(pcl::FieldComparison<pcl::PointNormal>::ConstPtr(
@@ -826,9 +828,9 @@ public:
         //设置输入点云
         condrem.filter(*doncloud_filtered);
         doncloud = doncloud_filtered;
-        std::cout << "filtered Pointcloud size " << doncloud->points.size() << std::endl;
+        //std::cout << "filtered Pointcloud size " << doncloud->points.size() << std::endl;
 
-        std::cout << "Clustering using EuclideanClusterExtraction with tolerance <= " << segradius << std::endl;
+        //std::cout << "Clustering using EuclideanClusterExtraction with tolerance <= " << segradius << std::endl;
         pcl::search::KdTree<pcl::PointNormal>::Ptr segtree(new pcl::search::KdTree<pcl::PointNormal>);
         segtree->setInputCloud(doncloud);
 
@@ -856,8 +858,7 @@ public:
             extract.setIndices(indices);
             extract.setNegative(false);
             extract.filter(*cloudFeatures);
-            printf("[segment_don] extractTo cluster indices = %d, cloudFeatures->size() = %d\n",
-                ci, cloudFeatures->size());
+            //printf("[segment_don] extractTo cluster indices = %d, cloudFeatures->size() = %d\n", ci, cloudFeatures->size());
 
             // Eigen::Vector3f euler_angles ;
             // double score;
@@ -869,7 +870,7 @@ public:
             // if (score < score_thres)
             {
                 outcloudvec.push_back(cloudFeatures);
-                printf("[segment_don] find cloud, ci = %d\n",ci);
+                //printf("[segment_don] find cloud, ci = %d\n",ci);
             }
         }
     }

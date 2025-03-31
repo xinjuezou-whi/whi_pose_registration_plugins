@@ -1899,7 +1899,7 @@ namespace pose_registration_plugins
         }
 
         //--------------------- 在原点云上 mincut ------
-        printf("start segmentMinCut");
+        printf("start segmentMinCut\n");
         std::vector<pcl::PointIndices> minclusterIndices;
         pcl::PointXYZ minpointCenter;
         minpointCenter.x = center.x;
@@ -1908,10 +1908,10 @@ namespace pose_registration_plugins
 
         minclusterIndices = PclUtilities<pcl::PointXYZ>::segmentMinCut(pclCloud, minpointCenter,
             minradius, cut_min_neighbour_, sigma_, weight_);
-        printf("total minclusters number from epic: %d\n", minclusterIndices.size()) ;
+        //printf("total minclusters number from epic: %d\n", minclusterIndices.size()) ;
         for (int i = 0; i < minclusterIndices.size(); ++i)
         {
-            printf("mincluster %d has points %d\n" , i, minclusterIndices[i].indices.size());
+            //printf("mincluster %d has points %d\n" , i, minclusterIndices[i].indices.size());
         }
         int ci = 0;
         pcl::PointCloud<pcl::PointXYZ>::Ptr minoutcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
@@ -1920,7 +1920,7 @@ namespace pose_registration_plugins
             ci++;
             pcl::PointCloud<pcl::PointXYZ>::Ptr cloudFeature(new pcl::PointCloud<pcl::PointXYZ>());
             PclUtilities<pcl::PointXYZ>::extractTo(pclCloud, cluster, cloudFeature);
-            printf("extractTo cluster indices = %d, cloudFeature->size() = %d\n", ci,cloudFeature->size());
+            //printf("extractTo cluster indices = %d, cloudFeature->size() = %d\n", ci,cloudFeature->size());
 
             if (!cloudFeature->empty() && cloudFeature->size() < mincut_size_)
             {

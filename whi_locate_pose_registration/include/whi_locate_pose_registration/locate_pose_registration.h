@@ -91,9 +91,23 @@ namespace pose_registration_plugins
         STA_OFFSET_FORWARD,
         STA_OFFSET_MOVING,
         STA_OFFSET_X,               
-        STA_START_BACK,         // PLAN_START
+
+        STA_START_BACK,         // PLAN_START  导航新增目标点后,判断是否在充电桩附近, 目前是写死旋转180度
         STA_START_PRE_ROT,
-        STA_START_ROT
+        STA_START_ROT,
+
+        ADAPT_FIRST_ROT,          // ADAPT  通过对靶标物的特征调整对准
+        ADAPT_PRE_ROT_ANGLE,
+        ADAPT_ROT_ANGLE,
+        ADAPT_BACK,
+        ADAPT_PRE_ROT_VERTICAL,
+        ADAPT_ROT_VERTICAL,
+        ADAPT_ADJUST_VERTICAL,
+        ADAPT_PRE_HORIZON,
+        ADAPT_PRE_NEXT,
+        ADAPT_ROUTE_VERTICAL
+
+
     };
 
     class LocatePoseRegistration : public whi_pose_registration::BasePoseRegistration
@@ -112,6 +126,7 @@ namespace pose_registration_plugins
         void stateRegistration(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateOffset(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateStart(geometry_msgs::Twist& CmdVel, double YawImu);
+        void stateAdjust(geometry_msgs::Twist& CmdVel, double YawImu);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
         void subCallbackOdom(const nav_msgs::Odometry::ConstPtr& msg);
@@ -246,5 +261,13 @@ namespace pose_registration_plugins
         // debug
         int debug_count_{ 0 };
         bool debug_visualize_{ false };
+        bool using_regist_{ true };
+        double fit_line_thresh_{ 0.01 };
+        std::vector<double> target_pose_;
+        std::string target_shape_{ "symmetry" };
+        double cross_angle_;
+        double horizon_angle_;
+        double cross_angle_tolerance_;
+        double horizon_angle_tolerance_;
     };
 } // namespace pose_registration_plugins

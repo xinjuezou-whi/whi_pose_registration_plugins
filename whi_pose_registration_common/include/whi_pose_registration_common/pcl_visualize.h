@@ -59,6 +59,7 @@ public:
     {
         queue_->produce(std::bind(&PclVisualize::view, this, Src, CloudID, PointSize, PointColor), "view");
     };
+
     void viewCloud02(const typename pcl::PointCloud<T>::Ptr Cur, const std::string& CurCloudID,
         const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         const typename pcl::PointCloud<T>::Ptr Tar, const std::string& TarCloudID,
@@ -67,11 +68,18 @@ public:
     {
         queue_->produce(std::bind(&PclVisualize::view02, this,Cur ,CurCloudID , Src, CloudID, Tar, TarCloudID, offset, offsetID, PointSize, PointColor), "view");
     };    
+
     void addviewCloud(const typename pcl::PointCloud<T>::Ptr Src, const std::string& CloudID,
         int PointSize = 1, std::array<double, 3> PointColor = {0.0, 1.0, 0.0})
     {
         queue_->produce(std::bind(&PclVisualize::addview, this, Src, CloudID, PointSize, PointColor), "view");
     };    
+
+    void addviewVector(std::vector< typename pcl::PointCloud<T>::Ptr >  pointV, std::vector< std::string > cloudIDV,
+        std::vector<int> PointSizeV, std::vector< std::array<double, 3> > PointColorV)
+    {
+        queue_->produce(std::bind(&PclVisualize::viewVector, this, pointV, cloudIDV, PointSizeV, PointColorV), "view");
+    }
 
 
 private:
@@ -163,7 +171,6 @@ private:
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSize, offsetID);
         viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
             1.0, 0.0, 0.0, offsetID);
-
         
         return nullptr;
     }
@@ -191,6 +198,55 @@ private:
 
         return nullptr;
     }    
+
+    std::shared_ptr<void> viewVector(std::vector< typename pcl::PointCloud<T>::Ptr >  pointV, std::vector< std::string > cloudIDV,
+        std::vector<int> PointSizeV, std::vector< std::array<double, 3> > PointColorV)
+    {
+
+        if (!viewer_)
+        {
+            viewer_.reset(new pcl::visualization::PCLVisualizer("3D Viewer"));
+            viewer_->setBackgroundColor(1.0, 1.0, 1.0);
+        }
+        else
+        {
+            viewer_->removeAllPointClouds();
+            viewer_->removeAllShapes();
+        }
+
+        if (pointV.size() != cloudIDV.size())
+        {
+            printf("pointV.size() != cloudIDV.size() , maybe wrong , please check vectors");
+            return nullptr;
+        }
+        for (int i = 0; i < pointV.size(); i++)
+        {
+
+            if (viewer_->contains(cloudIDV[i]))
+            {
+                viewer_->updatePointCloud<T>(pointV[i], cloudIDV[i]);
+            }
+            else
+            {
+                viewer_->addPointCloud<T>(pointV[i], cloudIDV[i]);
+            }
+        }
+
+        if (PointSizeV.size() != PointColorV.size())
+        {
+            printf("PointSizeV.size() != PointColorV.size() , maybe wrong , please check vectors");
+            return nullptr;
+        }
+
+        for (int i = 0; i< PointSizeV.size(); i++)
+        {
+            viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, PointSizeV[i], cloudIDV[i]);
+            viewer_->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_COLOR,
+                PointColorV[i][0], PointColorV[i][1], PointColorV[i][2], cloudIDV[i]);
+        }
+        return nullptr;
+    }
+
 
     void thViewerSpin()
     {

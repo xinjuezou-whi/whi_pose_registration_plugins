@@ -19,6 +19,10 @@ find_package(catkin REQUIRED COMPONENTS
   whi_interfaces
 )
 
+find_package(X11 REQUIRED)
+find_package(OpenCV REQUIRED)
+include_directories(${X11_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS} )  
+
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -167,6 +171,7 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   pcl_visualization
   yaml-cpp
+  ${X11_LIBRARIES} ${OpenCV_LIBRARIES}
 )
 
 #############

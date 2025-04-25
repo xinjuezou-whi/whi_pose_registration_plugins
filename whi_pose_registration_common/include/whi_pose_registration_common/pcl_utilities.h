@@ -55,7 +55,13 @@ Changelog:
 #include <pcl/registration/ndt.h> // NDT配准算法
 #include <pcl/segmentation/impl/extract_clusters.hpp>
 #include <pcl/features/don.h>
+// line segment
+#include <pcl/ModelCoefficients.h>
+#include <pcl/sample_consensus/method_types.h> 
+#include <pcl/sample_consensus/model_types.h> 
+#include <pcl/filters/statistical_outlier_removal.h>   
 #include "pcl_visualize.h"
+#include <cmath>
 typedef pcl::PointCloud<pcl::PointXYZ> pointcloud;
 typedef pcl::PointCloud<pcl::Normal> pointnormal;
 typedef pcl::PointCloud<pcl::FPFHSignature33> fpfhFeature;
@@ -910,6 +916,324 @@ public:
         *outcloud = *find_cloud;
 
     }
+
+    static void fitline(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::ModelCoefficients& lineCoff, double fit_line_thresh_)
+    {
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        pcl::SACSegmentation<pcl::PointXYZ> seg;
+        seg.setOptimizeCoefficients(true);
+        seg.setModelType(pcl::SACMODEL_LINE);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setMaxIterations(2000);
+        seg.setDistanceThreshold(fit_line_thresh_);
+
+        pcl::ModelCoefficients coefficients;
+        seg.setInputCloud(cloud);
+        seg.segment(*inliers, lineCoff);
+        
+    }
+
+    static void fitMultipleLines(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::vector<pcl::ModelCoefficients>& lineCoff, std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& point_cloud_array, double fit_line_thresh_)
+    {
+        pcl::PointIndices::Ptr inliers(new pcl::PointIndices());
+        pcl::SACSegmentation<pcl::PointXYZ> seg;
+        seg.setOptimizeCoefficients(true);
+        seg.setModelType(pcl::SACMODEL_LINE);
+        seg.setMethodType(pcl::SAC_RANSAC);
+        seg.setMaxIterations(2000);
+        seg.setDistanceThreshold(fit_line_thresh_);
+        int k = 0;
+        while (!cloud->empty() && k < 20)
+        {
+            pcl::ModelCoefficients coefficients;
+            seg.setInputCloud(cloud);
+            seg.segment(*inliers, coefficients);
+
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_line(new pcl::PointCloud<pcl::PointXYZ>);
+            pcl::PointCloud<pcl::PointXYZ>::Ptr outside(new pcl::PointCloud<pcl::PointXYZ>);
+
+            if (inliers->indices.size() > 0)
+            {
+                lineCoff.push_back(coefficients);          
+                pcl::ExtractIndices<pcl::PointXYZ> extract;   
+                extract.setInputCloud(cloud);
+                extract.setIndices(inliers);
+                //cout << inliers->indices.size() << endl;
+                extract.setNegative(false);               
+                extract.filter(*cloud_line);
+                point_cloud_array.push_back(cloud_line);
+                extract.setNegative(true);                  
+                extract.filter(*outside);                    
+                cloud.swap(outside);
+            }
+            else
+            {
+                PCL_ERROR("Could not estimate a line model for the given dataset.\n");
+                break;
+            }
+
+            k++;
+        }
+        printf("fitMultipleLines finish. \n");
+
+    }
+
+    static int get_horizon_line3(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>& point_cloud_array)
+    {
+        int getindex = -1;
+        int index = 0;
+        for (const auto& point_cloud : point_cloud_array) 
+        {
+            for (int i = 0; i < point_cloud->points.size(); ++i)
+            {
+                if (i == 0)
+                {
+                    continue;
+                }
+                double dis = std::sqrt(std::pow((point_cloud->points[i-1].x - point_cloud->points[i].x),2) + std::pow((point_cloud->points[i-1].y - point_cloud->points[i].y),2) );
+                if (dis > 0.1)      // set 0.1
+                {
+                    getindex = index;
+                    printf("find dis > 0.1, return index:%d \n",getindex);
+                    return getindex;
+                }
+            }
+            index++;
+        }
+        printf("not find dis > 0.1, return index -1, please check \n");
+        return getindex;
+    }
+
+    static int get_cross_line4(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array, int horizon_index, int& cross_index, int& cross_index2)
+    {
+        int ret = 0;
+
+        cross_index = -1;
+        cross_index2 = -1;
+        for (int i = 0; i< point_cloud_array.size(); i++)
+        {
+            if (i == horizon_index)
+            {
+                continue;
+            }
+            size_t current_size = point_cloud_array[i]->size();
+            if (current_size > (cross_index == -1 ? 0 : point_cloud_array[cross_index]->size())) 
+            {
+                cross_index2 = cross_index;
+                cross_index = i;
+            }
+            else if (current_size > (cross_index2 == -1 ? 0 : point_cloud_array[cross_index2]->size())) 
+            {
+                cross_index2 = i;
+            }
+
+        }
+
+        return ret;
+
+    }
+
+    // 计算两条直线的夹角（返回弧度）
+    static double calculateAngleBetweenLines(const pcl::ModelCoefficients& line1, const pcl::ModelCoefficients& line2) {
+        // 提取方向向量
+        Eigen::Vector3f v1(line1.values[3], line1.values[4], line1.values[5]);
+        Eigen::Vector3f v2(line2.values[3], line2.values[4], line2.values[5]);
+
+        // 计算点积和模长
+        double dot_product = v1.dot(v2);
+        double magnitude_v1 = v1.norm();
+        double magnitude_v2 = v2.norm();
+
+        // 防止除零错误
+        if (magnitude_v1 == 0 || magnitude_v2 == 0) 
+        {
+            std::cerr << "Error: One of the direction vectors has zero length!" << std::endl;
+            return 0.0;
+        }
+
+        // 计算夹角（弧度）
+        double cos_theta = dot_product / (magnitude_v1 * magnitude_v2);
+        cos_theta = std::max(-1.0, std::min(1.0, cos_theta)); // 确保值在 [-1, 1] 范围内
+        double angle_rad = acos(cos_theta);
+
+        return angle_rad;
+    }
+
+    static void convertLineToInterceptForm(const pcl::ModelCoefficients &lineCoff) 
+    {
+        // 提取直线参数
+        double x0 = lineCoff.values[0]; // 直线上的点 P0(x0, y0, z0)
+        double y0 = lineCoff.values[1];
+        double a = lineCoff.values[3]; // 方向向量 v(a, b, c)
+        double b = lineCoff.values[4];
+
+        // 检查方向向量是否有效
+        if (a == 0 && b == 0) {
+            std::cerr << "Error: Direction vector is zero!" << std::endl;
+            return;
+        }
+
+        // 计算斜率 k 和截距 b
+        if (a != 0) {
+            double k = b / a;          // 斜率
+            double intercept = y0 - k * x0; // 截距
+            //std::cout << "Line equation in XY plane: y = " << k << " * x + " << intercept << std::endl;
+            printf("get intercept and slope, b = %f , k = %f \n", intercept, k);
+        } else {
+            // 如果 a == 0，直线垂直于X轴
+            //std::cout << "Line equation in XY plane: x = " << x0 << std::endl;
+            printf("Line equation in XY plane: x = %f \n", x0);
+        }
+    }
+
+    static int get_cross_line_unsymmetry(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array, std::vector<pcl::ModelCoefficients> lines_coefficients, double cross_angle_, double cross_angle_tolerance_, int& cross_index,int& cross_index2)
+    {
+        int ret = -1;
+        double min_cross_angle = 180.0;
+        for (int i = 0; i < point_cloud_array.size(); i++)
+        {
+            for (int j = 0; j < point_cloud_array.size(); j++)
+            {
+                if (i == j)
+                {
+                    continue;
+                }
+                double angle_rad = calculateAngleBetweenLines(lines_coefficients[i], lines_coefficients[j]);
+                double angle_degree = angle_rad * 180.0 / 3.1415926;
+                printf("in get_cross_line_unsymmetry, cross angle = %f \n", angle_degree);
+                double cross_angle_reverse = 180.0 - cross_angle_;
+                //int length = point_cloud_array[i]->points.size() + point_cloud_array[j]->points.size();
+                double cross_angle1 = fabs(angle_degree - cross_angle_);
+                double cross_angle2 = fabs(angle_degree - cross_angle_reverse);
+                double cur_min = cross_angle1 < cross_angle2 ? cross_angle1 : cross_angle2;
+                if (cur_min < cross_angle_tolerance_ && cur_min < min_cross_angle )   // set cur_min < 10.0 误差较大 ,10度有时找不到，看输出，改成20度
+                {
+                    min_cross_angle = cur_min;                    
+                    cross_index = i;
+                    cross_index2 = j;
+                    ret = 1;
+                    printf("find cross_index,cross_index = %d, corss_index2 = %d \n",cross_index, cross_index2);
+                }
+
+
+            }
+        }
+        if (ret == 1)
+        {
+            printf("find min_cross_angle cross_index,cross_index = %d, corss_index2 = %d \n",cross_index, cross_index2);
+        }
+
+        return ret;
+    }
+
+    static int get_horizon_line_unsymmetry_bycross(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array_after, std::vector<pcl::ModelCoefficients> lines_coefficients, double horizon_angle_, double horizon_angle_tolerance_, int long_cross_index, int cross_index, int cross_index2, int& horizon_index, int& horizon_index2)
+    {
+        int ret = -1;
+        double min_cross_angle = 180.0;
+        for (int i = 0; i < point_cloud_array_after.size(); i++)
+        {
+            if (i == long_cross_index || i == cross_index || i == cross_index2)
+            {
+                continue;
+            }
+            double angle_rad = calculateAngleBetweenLines(lines_coefficients[i], lines_coefficients[long_cross_index]);
+            double angle_degree = angle_rad * 180.0 / 3.1415926;
+            printf("in get_horizon_line_unsymmetry_bycross, cross angle = %f \n", angle_degree);
+            double horizon_angle_reverse = 180.0 - horizon_angle_;
+            //int length = point_cloud_array[i]->points.size() + point_cloud_array[j]->points.size();
+            double cross_angle1 = fabs(angle_degree - horizon_angle_);
+            double cross_angle2 = fabs(angle_degree - horizon_angle_reverse);
+            double cur_min = cross_angle1 < cross_angle2 ? cross_angle1 : cross_angle2;
+            if (cur_min < horizon_angle_tolerance_ && cur_min < min_cross_angle )   // set cur_min < 10.0 误差较大
+            {
+                min_cross_angle = cur_min;                    
+                horizon_index = i;
+                horizon_index2 = i;     //这里因为只找一条直线，但是因为之前是两条的，可以暂时保留
+                ret = 1;
+                printf("find horizon_index,horizon_index = %d \n", horizon_index);
+            }
+        }
+        if (ret == 1)
+        {
+            printf("find min_horizon_angle horizon_index,horizon_index = %d \n",horizon_index);
+        }
+        return ret;
+
+    }
+
+    static int get_horizon_line_unsymmetry(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array, std::vector<pcl::ModelCoefficients> lines_coefficients, double horizon_angle_tolerance_, int cross_index, int cross_index2, int& horizon_index, int& horizon_index2)
+    {
+        int ret = -1;
+        double min_cross_angle = 180.0;
+        for (int i = 0; i < point_cloud_array.size(); i++)
+        {
+            for (int j = 0; j < point_cloud_array.size(); j++)
+            {
+                if (i == j)
+                {
+                    continue;
+                }
+                if (i == cross_index || i == cross_index2 || j == cross_index || j == cross_index2) // 排除中心点交叉直线
+                {
+                    continue;
+                }
+
+                double angle_rad = calculateAngleBetweenLines(lines_coefficients[i], lines_coefficients[j]);
+                double angle_degree = angle_rad * 180.0 / 3.1415926;
+                printf("in get_horizon_line_unsymmetry, cross angle = %f \n", angle_degree);
+                double angle1 = 0.0;
+                double angle2 = 180.0;
+                double cross_angle1 = fabs(angle_degree - angle1);
+                double cross_angle2 = fabs(angle_degree - angle2);
+                double cur_min = cross_angle1 < cross_angle2 ? cross_angle1 : cross_angle2;
+                if (cur_min < horizon_angle_tolerance_ && cur_min < min_cross_angle)  // set 10.0 
+                {
+                    min_cross_angle = cur_min;    
+                    horizon_index = i;
+                    horizon_index2 = j;
+                    ret = 1;
+                    printf("find horizon_index ,horizon_index = %d, horizon_index2 = %d  \n", horizon_index, horizon_index2);
+                }
+
+
+            }      
+        }
+        if (ret == 1)
+        {
+            printf("find min_horizon_angle horizon_index,horizon_index = %d, horizon_index2 = %d \n",horizon_index, horizon_index2);
+        }
+        return ret;
+    }
+
+    static int computeIntersection(pcl::ModelCoefficients & coeff1, pcl::ModelCoefficients & coeff2, pcl::PointXYZ& intersection) 
+    {
+        // 提取直线参数  
+        Eigen::Vector3f p1(coeff1.values[0], coeff1.values[1], coeff1.values[2]); // 第一条直线的点  
+        Eigen::Vector3f d1(coeff1.values[3], coeff1.values[4], coeff1.values[5]); // 第一条直线的方向  
+        Eigen::Vector3f p2(coeff2.values[0], coeff2.values[1], coeff2.values[2]); // 第二条直线的点  
+        Eigen::Vector3f d2(coeff2.values[3], coeff2.values[4], coeff2.values[5]); // 第二条直线的方向  
+        // 计算方向向量的叉积  
+        Eigen::Vector3f d1_cross_d2 = d1.cross(d2);
+        // 若方向向量共线，返回 false  
+        if (d1_cross_d2.norm() < 1e-6) {
+            return 0; // 无交点或平行  
+        }
+        // 解方程求交点  
+        Eigen::Matrix3f A;
+        A << d1, -d2, d1_cross_d2;
+        Eigen::Vector3f b = p2 - p1;
+        // 解线性方程 Ax = b  
+        Eigen::Vector3f result = A.colPivHouseholderQr().solve(b); 
+        float t = result(0);//交点在直线1的相对位置
+        float s = result(1);//交点在直线2的相对位置
+        // 计算交点  
+        intersection.x = p1(0) + t * d1(0);
+        intersection.y = p1(1) + t * d1(1);
+        intersection.z = p1(2) + t * d1(2);
+        return 1;
+    }
+
+
 };
 
 // 最小包围圆算法 

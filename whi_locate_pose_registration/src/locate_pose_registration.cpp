@@ -15,6 +15,13 @@ All text above must be included in any redistribution.
 #include "whi_pose_registration_common/pcl_visualize.h"
 #include "whi_pose_registration_common/pose_utilities.h"
 
+// 以下几个头文件放在这里， 不要放在前面  test start
+#include <opencv2/opencv.hpp>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <ctime>
+// 到这里       test end
+
 #include <angles/angles.h>
 #include <pluginlib/class_list_macros.h>
 #include <thread>
@@ -24,6 +31,89 @@ All text above must be included in any redistribution.
 
 namespace pose_registration_plugins
 {
+    // ------------------ test start ----------------------------------
+    static void saveXImageToFile(XImage* xImage, const std::string& filename )
+    {
+        int width = xImage->width;
+        int height  = xImage->height;
+        cv::Mat mat(height, width, CV_8UC4, xImage->data);
+        cv::Mat rgbImage;
+        cv::cvtColor(mat, rgbImage, cv::COLOR_BGRA2BGR);
+        cv::imwrite(filename, rgbImage);
+        //std::cout << "Image saved to " << filename << std::endl;
+    }
+
+    static bool getscreenImage(std::string & filename)
+    {
+        Display* display = XOpenDisplay(NULL);
+        if (!display)
+        {
+            std::cerr << "Unable to open X display" << std::endl;
+            return false;
+        }
+    
+        Screen* screen = DefaultScreenOfDisplay(display);
+        int screen_width = XDisplayWidth(display, DefaultScreen(display));
+        int screen_height = XDisplayHeight(display, DefaultScreen(display));
+    
+        XImage* image = XGetImage(display, RootWindow(display,DefaultScreen(display)),0,0,screen_width,screen_height,AllPlanes,ZPixmap);
+    
+        if (image)
+        {
+            //std::string filename = "testscreen.jpg";
+            saveXImageToFile(image, filename);
+            std::cout << "screenshot captured " << std::endl;
+        }
+    
+        XDestroyImage(image);
+        XCloseDisplay(display);
+        return true;
+    }
+
+    static std::string getLocalTime()
+    {
+        // 获取当前时间
+        std::time_t now = std::time(nullptr);
+        // 转换为本地时间
+        std::tm* local_time = std::localtime(&now);
+        // 格式化输出时间
+        char buffer[80];
+        //std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", local_time);
+        std::strftime(buffer, sizeof(buffer), "%H%M%S", local_time);
+        //std::cout << "Local time: " << buffer << std::endl;
+        std::string time_str;
+        time_str = buffer;
+        //std::cout << "Local time str: " << time_str.c_str() << std::endl;
+        return time_str;
+    }
+
+
+    // ------------------ test end ----------------------------------
+
+    static double cal_horizon_angle(std::vector<pcl::ModelCoefficients>& lines_coefficients, int horizon_index)
+    {
+        geometry_msgs::Point startLine, endLine, startHorizon, endHorizon;
+        startLine.x = lines_coefficients[horizon_index].values[0];
+        startLine.y = lines_coefficients[horizon_index].values[1];
+        double k = 1.0;
+        if (lines_coefficients[horizon_index].values[4] < 0)
+        {
+            k = -1.0;
+        }
+        endLine.x = lines_coefficients[horizon_index].values[0] + k * lines_coefficients[horizon_index].values[3];
+        endLine.y = lines_coefficients[horizon_index].values[1] + k * lines_coefficients[horizon_index].values[4];
+        startHorizon.x = 0.0;
+        startHorizon.y = 0.0;
+        endHorizon.x = 0.0;
+        endHorizon.y = 1.0;
+        auto vecLine = PoseUtilities::createVector2D(startLine,endLine);
+        auto vecHorizon = PoseUtilities::createVector2D(startHorizon,endHorizon);
+        double targetYaw = PoseUtilities::angleBetweenVectors2D(vecLine, vecHorizon);
+        return targetYaw;
+    }
+
+
+
     LocatePoseRegistration::LocatePoseRegistration()
         : BasePoseRegistration()
     {
@@ -218,11 +308,25 @@ namespace pose_registration_plugins
             {
                 charge_point_.push_back(0.0);
             }
-        }          
+        }        
+        if (!node_handle_->getParam("pose_registration/LocatePose/target_pose", target_pose_))
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                target_pose_.push_back(0.0);
+            }
+        }    
         node_handle_->param("pose_registration/distance_charge_limit", distance_charge_limit_, 0.05);
         node_handle_->param("pose_registration/need_charge_near", need_charge_near_, false);      
         node_handle_->param("pose_registration/LocatePose/rot_back_yaw_tolerance", rot_back_yaw_tolerance_, 0.5);
         node_handle_->param("pose_registration/LocatePose/rot_min_vel", rot_min_vel_, 0.05); 
+        node_handle_->param("pose_registration/LocatePose/using_regist", using_regist_, true); 
+        node_handle_->param("pose_registration/LocatePose/fit_line_thresh", fit_line_thresh_, 0.005);
+        node_handle_->param("pose_registration/LocatePose/target_shape", target_shape_, std::string("symmetry"));
+        node_handle_->param("pose_registration/LocatePose/cross_angle", cross_angle_, 90.0);
+        node_handle_->param("pose_registration/LocatePose/horizon_angle", horizon_angle_, 45.0);
+        node_handle_->param("pose_registration/LocatePose/cross_angle_tolerance", cross_angle_tolerance_, 10.0);
+        node_handle_->param("pose_registration/LocatePose/horizon_angle_tolerance", horizon_angle_tolerance_, 10.0);
         rot_back_yaw_tolerance_ = angles::from_degrees(rot_back_yaw_tolerance_); 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
@@ -246,7 +350,14 @@ namespace pose_registration_plugins
             yawFromImu = angleyaw_imu_;
         }
         
-        stateRegistration(CmdVel, yawFromImu);
+        if (using_regist_)
+        {
+            stateRegistration(CmdVel, yawFromImu);          // 点云配准
+        }
+        else
+        {
+            stateAdjust(CmdVel, yawFromImu);                 // 根据点云 调整对齐
+        }
         stateOffset(CmdVel, yawFromImu);
         stateStart(CmdVel,yawFromImu);
     }
@@ -327,6 +438,480 @@ namespace pose_registration_plugins
         }
     }
 
+
+    void LocatePoseRegistration::stateAdjust(geometry_msgs::Twist& CmdVel, double YawImu)
+    {
+        if (state_ == ADAPT_FIRST_ROT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_, base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2],
+                PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (using_imu_)
+            {
+                angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
+            }       
+            if (fabs(angleDiff) < yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                // new modify
+                // determine the process in registration
+                updateCurrentPose(); 
+                prestate_ = ADAPT_FIRST_ROT;
+                state_ = STA_WAIT_SCAN;
+                printf("ADAPT_FIRST_ROT finished, YawImu = %f\n", YawImu);
+
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                //CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+                double vel_z = fabs(angleDiff) / fabs(angleDiff_g_) * rotvel_;
+                vel_z = vel_z > rot_min_vel_ ? vel_z : rot_min_vel_;
+                CmdVel.angular.z = PoseUtilities::signOf(sin(angleDiff)) * vel_z;
+            }
+        }
+        else if (state_ == ADAPT_PRE_ROT_ANGLE)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
+                angles::shortest_angular_distance(PoseUtilities::signOf(distance_horizon_) * zig_angle_, angleBaselink));
+            angle_target_imu_ = angles::shortest_angular_distance(
+                PoseUtilities::signOf(distance_horizon_) * zig_angle_, YawImu);
+
+            state_ = ADAPT_ROT_ANGLE;
+            printf("ADAPT_PRE_ROT_ANGLE finished, start ADAPT_ROT_ANGLE, curyaw is: %f ,angle_target_imu_ is: %f\n", YawImu, angle_target_imu_);
+        }
+        else if (state_ == ADAPT_ROT_ANGLE)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (using_imu_)
+            {
+                angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
+            }       
+            if (fabs(angleDiff) < rot_back_yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = ADAPT_BACK;
+                distance_todrive_ = fabs(distance_horizon_) / sin(zig_angle_);
+                updateCurrentPose();
+                printf("ADAPT_ROT_ANGLE finished, curyaw is: %f\n", YawImu);
+                printf("ADAPT_ROT_ANGLE finished, start ADAPT_BACK, distance_todrive: %f\n", distance_todrive_);
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ : PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+            }
+        }
+        else if (state_ == ADAPT_BACK)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double routedis = 0.0;
+            if (using_odom_pose_)
+            {
+                routedis = PoseUtilities::distance(pose_odom_, pose_standby_odom_);
+            }
+            else
+            {
+                routedis = PoseUtilities::distance(curpose,pose_standby_);
+            }              
+            double extradis = distance_todrive_ + 0.1;  //0.3
+            double distDiff = distance_todrive_ * rot_back_ratio_ - routedis;   // add rot_back_ratio 旋转时候的误差，通过系数补偿
+          
+            //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
+            if (routedis > extradis)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.linear.y = 0.0;
+                state_ = STA_FAILED;
+                printf("fail at ADAPT_BACK, routedis too far, align or rotate wrong\n");
+            }
+            else if (fabs(distDiff) < xy_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = ADAPT_PRE_ROT_VERTICAL;
+                printf("ADAPT_BACK finished, start ADAPT_PRE_ROT_VERTICAL\n"); 
+            }
+            else
+            {
+                CmdVel.linear.x = is_fine_tune_ ? -1 * PoseUtilities::signOf(distDiff) * xyvel_ * fine_tune_ratio_linear_: -1 * PoseUtilities::signOf(distDiff) * xyvel_;
+                CmdVel.linear.y = 0.0;
+            }
+        }
+        else if (state_ == ADAPT_PRE_ROT_VERTICAL)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + PoseUtilities::signOf(distance_horizon_) * zig_angle_);
+            angle_target_imu_ = YawImu + PoseUtilities::signOf(distance_horizon_) * zig_angle_;
+
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            updateCurrentPose(); 
+            state_ = ADAPT_ROT_VERTICAL;
+            printf("ADAPT_PRE_ROT_VERTICAL finished, start ADAPT_ROT_VERTICAL, curyaw is: %f, angle_target_imu_ is: %f\n", YawImu, angle_target_imu_);   
+        }
+        else if (state_ == ADAPT_ROT_VERTICAL)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleDiff = angles::shortest_angular_distance(
+                PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2], PoseUtilities::toEuler(pose_target_.orientation)[2]);
+            if (using_imu_)
+            {
+                angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
+            }            
+            if (fabs(angleDiff) < rot_back_yaw_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                //modify here 修改这里,优化配准
+                state_ = ADAPT_ADJUST_VERTICAL;    //STA_ADJUST_REGIST
+                //prestate_ = state_;
+                //state_ = STA_WAIT_SCAN;
+                updateCurrentPose(); 
+                distance_todrive_ = fabs(distance_horizon_) / tan(zig_angle_) + distance_vertical_; //在这里计算
+                printf("ADAPT_ROT_VERTICAL finished, curyaw is: %f\n", YawImu);
+                //printf("STA_ROT_VERTICAL finished, prepare for STA_ADJUST_REGIST, cal for distance_todrive_ = %f\n", distance_todrive_);
+            }
+            else
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = is_fine_tune_ ? PoseUtilities::signOf(sin(angleDiff)) * rotvel_ * fine_tune_ratio_rot_ :PoseUtilities::signOf(sin(angleDiff)) * rotvel_ ;
+            }
+        }
+        else if (state_ == ADAPT_ADJUST_VERTICAL)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;
+            double routedis = 0.0;
+            if (using_odom_pose_)
+            {
+                routedis = PoseUtilities::distance(pose_odom_, pose_standby_odom_);
+            }
+            else
+            {
+                routedis = PoseUtilities::distance(curpose,pose_standby_);
+            }              
+            double extradis = fabs(distance_todrive_) + 0.1;
+            double distDiff = fabs(distance_todrive_) - routedis;
+            //行驶距离超出计算值 30cm ；偏差过大，说明前面对齐失败了
+            if (routedis > extradis)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.linear.y = 0.0;
+                state_ = STA_FAILED;
+                printf("fail at ADAPT_ADJUST_VERTICAL, routedis too far, align or rotate wrong\n");
+            }
+            else if (fabs(distDiff) < xy_tolerance_)
+            {
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+
+                prestate_ = state_;
+                state_ = STA_WAIT_SCAN;
+            }
+            else
+            {
+                CmdVel.linear.x = is_fine_tune_ ? PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_ * fine_tune_ratio_linear_ :PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_todrive_) * xyvel_;
+                CmdVel.linear.y = 0.0;
+            }
+        }
+        else if (state_ == ADAPT_PRE_HORIZON)
+        {  
+            if (target_rela_pose_vec_.empty())
+            {
+                printf("in ADAPT_PRE_HORIZON, target_rela_pose_vec_ is empty, done\n");
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_DONE;
+                return ;                
+            }
+
+            auto front_target_rela = target_rela_pose_vec_.front();
+            target_rela_pose_[0] = front_target_rela.target_rela_pose[0];
+            target_rela_pose_[1] = front_target_rela.target_rela_pose[1];
+            target_rela_pose_[2] = front_target_rela.target_rela_pose[2];  
+            route_vertical_direct_ = front_target_rela.direction;
+            using_inertial_ = front_target_rela.using_inertial;     
+            if (PoseUtilities::signOf(target_rela_pose_[1]) == 0 )
+            {
+                leftorright_ = 1;
+            }
+            else
+            {
+                leftorright_ = PoseUtilities::signOf(target_rela_pose_[1]);
+            }            
+            target_rela_pose_vec_.pop_front();
+
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + leftorright_ * 0.5 * M_PI);
+            angle_target_imu_ = YawImu + leftorright_ * 0.5 * M_PI;       
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            updateCurrentPose();
+
+            distance_horizon_ = fabs(target_rela_pose_[1]) - leftorright_ * pose_feature_.position.y;    // mark here by zhouyue
+            distance_vertical_ = target_rela_pose_[0] + pose_feature_.position.x;
+            get_align_imu_ = YawImu;
+            get_align_angle_ = angleBaselink;
+            geometry_msgs::Pose relapos;
+            relapos.position.x = distance_vertical_;
+            relapos.position.y = target_rela_pose_[1] - pose_feature_.position.y;
+            relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+
+            //pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
+
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;  
+
+            geometry_msgs::TransformStamped trans = transBaselinkMap;
+            trans.transform.translation.x = getfea_cur_pose_.position.x;
+            trans.transform.translation.y = getfea_cur_pose_.position.y;
+            trans.transform.rotation = getfea_cur_pose_.orientation;
+            printf("ADAPT_PRE_HORIZON curpose is: [%f, %f], angleBaselink: %f, get_align_imu_: %f\n",
+                curpose.position.x, curpose.position.y, angleBaselink, get_align_imu_);   
+
+            if (fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
+            {
+                if (fabs(target_rela_pose_[2]) < 0.001)
+                {
+                    state_ = ADAPT_PRE_NEXT;
+                    printf("ADAPT_PRE_HORIZON to STA_PRE_NEXT, sta_done\n");
+                }
+            }
+            else if (fabs(target_rela_pose_[1]) < 0.001)
+            {
+                distance_vertical_ = target_rela_pose_[0];
+                relapos.position.x = distance_vertical_;
+                relapos.position.y = 0;
+                relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                pose_end_ = PoseUtilities::applyTransform(relapos, transBaselinkMap);
+                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
+                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
+                if (!using_inertial_)
+                {
+                    state_ = ADAPT_ROUTE_VERTICAL;
+                    get_vertical_direct_imu_ = YawImu;
+                    printf("at ADAPT_PRE_HORIZON, !using_inertial, direct to ADAPT_ROUTE_VERTICAL, distance_vertical_=%f \n",distance_vertical_);
+                }
+            }
+            // end if , 只考虑 到位后直行
+            
+        }
+        else if (state_ == ADAPT_PRE_NEXT)
+        {
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+
+            if (target_rela_pose_vec_.empty())
+            {
+                ROS_INFO("---------- in ADAPT_PRE_NEXT, pose registrated, curpose is:[%f, %f], YawImu is:%f",
+                    transBaselinkMap.transform.translation.x, transBaselinkMap.transform.translation.y, YawImu);
+                CmdVel.linear.x = 0.0;
+                CmdVel.angular.z = 0.0;
+                state_ = STA_DONE;
+                return ;
+            }
+            
+            auto front_target_rela = target_rela_pose_vec_.front();
+            target_rela_pose_[0] = front_target_rela.target_rela_pose[0];
+            target_rela_pose_[1] = front_target_rela.target_rela_pose[1];
+            target_rela_pose_[2] = front_target_rela.target_rela_pose[2];  
+            route_vertical_direct_ = front_target_rela.direction;     
+            using_inertial_ = front_target_rela.using_inertial;      
+            if (PoseUtilities::signOf(target_rela_pose_[1]) == 0 )
+            {
+                leftorright_ = 1;
+            }
+            else
+            {
+                leftorright_ = PoseUtilities::signOf(target_rela_pose_[1]);
+            }            
+            target_rela_pose_vec_.pop_front();
+
+            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink + leftorright_ * 0.5 * M_PI);
+            angle_target_imu_ = YawImu + leftorright_ * 0.5 * M_PI;       
+            angle_target_imu_ = getrightImu(angle_target_imu_);
+            updateCurrentPose();
+
+            distance_horizon_ = fabs(target_rela_pose_[1]);    // mark here by zhouyue
+            distance_vertical_ = fabs(target_rela_pose_[0]);
+            geometry_msgs::Pose relapos;
+            relapos.position.x = target_rela_pose_[0];
+            relapos.position.y = target_rela_pose_[1];
+            relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+
+            geometry_msgs::Pose curpose;
+            curpose.position.x = transBaselinkMap.transform.translation.x;
+            curpose.position.y = transBaselinkMap.transform.translation.y;  
+            geometry_msgs::Pose last_pose_end;
+            last_pose_end = pose_end_;
+            geometry_msgs::TransformStamped trans = transBaselinkMap;
+            trans.transform.translation.x = pose_end_.position.x;
+            trans.transform.translation.y = pose_end_.position.y;
+            //trans.transform.rotation = getfea_cur_pose_.orientation;
+            //getfea_cur_pose_.orientation.w = 1.0;
+            pose_end_ = PoseUtilities::applyTransform(relapos, trans);
+
+            printf("ADAPT_PRE_NEXT curpose is: [%f, %f], angleBaselink:%f, get_align_imu_: %f\n",
+                curpose.position.x, curpose.position.y, angleBaselink, get_align_imu_);   
+
+            if (fabs(target_rela_pose_[0]) < 0.001 && fabs(target_rela_pose_[1]) < 0.001)
+            {
+                if (fabs(target_rela_pose_[2]) < 0.001)
+                {
+                    state_ = ADAPT_PRE_NEXT;
+                    printf("ADAPT_PRE_NEXT, sta_done\n");
+                }
+            }
+            else if (fabs(target_rela_pose_[1]) < 0.001)
+            {
+                relapos.position.x = (route_vertical_direct_ == "inverse")? (-1 * target_rela_pose_[0]) : target_rela_pose_[0];
+                relapos.position.y = 0;
+                relapos.orientation = PoseUtilities::fromEuler(0.0, 0.0, 0.0);
+                geometry_msgs::TransformStamped subtrans = transBaselinkMap;
+                subtrans.transform.translation.x = last_pose_end.position.x;
+                subtrans.transform.translation.y = last_pose_end.position.y;
+                if (is_fixed_location_)
+                {
+                    subtrans.transform.rotation = getfea_cur_pose_.orientation;
+                }         
+                else
+                {
+                    subtrans.transform.rotation = PoseUtilities::fromEuler(0.0, 0.0, get_align_angle_);
+                }       
+                pose_end_ = PoseUtilities::applyTransform(relapos, subtrans);
+                vertical_start_pose_.position.x = transBaselinkMap.transform.translation.x;
+                vertical_start_pose_.position.y = transBaselinkMap.transform.translation.y;
+                prestate_ = state_;
+                //state_ = STA_PRE_ROT_ROUTE_VERTICAL;
+                if (!using_inertial_)
+                {
+                    state_ = ADAPT_ROUTE_VERTICAL;
+                    get_vertical_direct_imu_ = YawImu;
+                    //updateCurrentPose(); 
+                    printf("at ADAPT_PRE_NEXT, !using_inertial, direct to ADAPT_ROUTE_VERTICAL, distance_vertical_ = %f\n",distance_vertical_);
+                }           
+
+            }
+
+        }
+        else if (state_ == ADAPT_ROUTE_VERTICAL)
+        {
+            static std::string substate = "direct" ;
+            static int lastforward = 0; // 0: direct ,1:left , -1:right
+            int direction;
+            if (route_vertical_direct_ == "direct")
+            {
+                direction = 1;
+            }
+            else if (route_vertical_direct_ == "inverse")
+            {
+                direction = -1;
+            }
+            else
+            {
+                ROS_WARN_STREAM("config route_vertical_direct_ error, check config");
+            }
+            if (!using_inertial_)
+            {
+                // blind logic
+                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                geometry_msgs::Pose curpose;
+                curpose.position.x = transBaselinkMap.transform.translation.x;
+                curpose.position.y = transBaselinkMap.transform.translation.y;
+                double routedis = 0.0;
+                if (using_odom_pose_)
+                {
+                    routedis = PoseUtilities::distance(pose_odom_, pose_standby_odom_);
+                }
+                else
+                {
+                    routedis = PoseUtilities::distance(curpose,pose_standby_);
+                }                
+                double extradis = fabs(distance_vertical_) + 0.1;
+                double distDiff = fabs(distance_vertical_) - routedis;
+                //第二条路径行驶距离超出计算值 30cm ；偏差过大，说明前面有问题
+                if (routedis > extradis)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.linear.y = 0.0;
+                    state_ = STA_FAILED;
+                    printf("fail at ADAPT_ROUTE_VERTICAL, routedis too far, route1 rotate wrong\n");
+                }
+                else if (fabs(distDiff) < xy_tolerance_)
+                {
+                    CmdVel.linear.x = 0.0;
+                    CmdVel.angular.z = 0.0;
+                    if(fabs(target_rela_pose_[2]) < 0.01)
+                    {
+                        state_ = ADAPT_PRE_NEXT;
+                        printf("ADAPT_ROUTE_VERTICAL finished, to ADAPT_PRE_NEXT\n");
+                        printf("arrive curpose is: [%f, %f]\n", curpose.position.x, curpose.position.y);
+
+                    }         
+                }
+                else
+                {
+                    CmdVel.linear.x = direction * PoseUtilities::signOf(distDiff) * PoseUtilities::signOf(distance_vertical_) * xyvel_;
+                    CmdVel.linear.y = 0.0;
+
+                    auto imuangleDiff = angles::shortest_angular_distance(YawImu, get_vertical_direct_imu_ + angles::from_degrees(rot_offset_) );
+                    //printf("imuangleDiff is: %f\n", imuangleDiff);
+                    if ( fabs(imuangleDiff) > imu_adjust_rot_thresh_ )
+                    {
+                        CmdVel.angular.z = PoseUtilities::signOf(imuangleDiff) * imu_adjust_rot_vel_ ;
+                    }
+                    else
+                    {
+                        CmdVel.angular.z = 0 ;
+                    }                    
+                }
+            }
+        }     
+        else if (state_ == STA_WAIT_SCAN)
+        {
+            static auto preTime = ros::Time::now();
+            auto timeNow = ros::Time::now();
+            static int index = 0;
+
+            if (index == 0)
+            {
+                preTime = timeNow;
+                index = 1;
+            }
+
+            CmdVel.linear.x = 0.0;
+            CmdVel.angular.z = 0.0;
+
+            if ((timeNow - preTime).toSec() >= wait_scan_time_)
+            {
+                index = 0;
+                if (prestate_ == STA_START || prestate_ == ADAPT_FIRST_ROT || prestate_ == ADAPT_ADJUST_VERTICAL)
+                {
+                    state_ = STA_REGISTRATE;
+                    printf("start STA_REGISTRATE\n");
+                }
+            }
+        }
+
+
+    }
+
     void LocatePoseRegistration::stateRegistration(geometry_msgs::Twist& CmdVel, double YawImu)
     {
         if (state_ == STA_ALIGN)
@@ -338,20 +923,7 @@ namespace pose_registration_plugins
             if (using_imu_)
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ALIGN, angle_target_imu_ = %f, YawImu = %f, angleDiff = %f\n",
-                        angle_target_imu_, YawImu, angleDiff );
-                }
-            }
-            else
-            {
-                if (debug_count_ == 5)
-                {
-                    printf("in state STA_ALIGN, angle_target_imu_ = %f, angleDiff = %f\n",
-                        angle_target_imu_, angleDiff );
-                }
-            }        
+            }       
             if (fabs(angleDiff) < yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
@@ -1871,31 +2443,34 @@ namespace pose_registration_plugins
         printf("outcloud, radius: %.10lf\n center.x: %.10lf center.y: %.10lf\n", minradius, center.x, center.y);
         minradius = minradius + 0.030 ; 
 
-        // 求模板点云的最小包围圆半径，作比较
-        std::vector<mypoint> tarpvec;
-        for (int i = 0; i < target_cloud_->points.size(); ++i)
+        if (using_regist_)      // 只在 using_regist_ 情况下判断 , 如果 not using_regist_ , 就不使用 target_cloud_ 了
         {
-            mypoint onepoint;
-            onepoint.x = target_cloud_->points[i].x;
-            onepoint.y = target_cloud_->points[i].y;
-            tarpvec.push_back(onepoint);
-        }
-        double tarminradius;
-        mypoint tarcenter;
-        min_circle_cover(tarpvec, tarminradius, tarcenter);
-        printf("targetcloud, radius: %.10lf\n  center.x: %.10lf center.y: %.10lf\n", tarminradius, tarcenter.x, tarcenter.y);
-        
-        // check if the filtered target meet the template pattern
-        double delta_radius = minradius - tarminradius;
-        printf("delta_radius is: %f\n", fabs(delta_radius));
-        if (fabs(delta_radius) > pattern_met_radius_thresh_)
-        {
-            printf("outcloud radius is far from target radius, maybe wrong\n");
-            std::string outfile;
-            outfile = packpath_ + "/pcd/testgetall.pcd";
-            pcl::io::savePCDFileASCII (outfile, *pclCloud);                     
-            state_ = STA_FAILED;
-            return nullptr;
+            // 求模板点云的最小包围圆半径，作比较
+            std::vector<mypoint> tarpvec;
+            for (int i = 0; i < target_cloud_->points.size(); ++i)
+            {
+                mypoint onepoint;
+                onepoint.x = target_cloud_->points[i].x;
+                onepoint.y = target_cloud_->points[i].y;
+                tarpvec.push_back(onepoint);
+            }
+            double tarminradius;
+            mypoint tarcenter;
+            min_circle_cover(tarpvec, tarminradius, tarcenter);
+            printf("targetcloud, radius: %.10lf\n  center.x: %.10lf center.y: %.10lf\n", tarminradius, tarcenter.x, tarcenter.y);
+            
+            // check if the filtered target meet the template pattern
+            double delta_radius = minradius - tarminradius;
+            printf("delta_radius is: %f\n", fabs(delta_radius));
+            if (fabs(delta_radius) > pattern_met_radius_thresh_)
+            {
+                printf("outcloud radius is far from target radius, maybe wrong\n");
+                std::string outfile;
+                outfile = packpath_ + "/pcd/testgetall.pcd";
+                pcl::io::savePCDFileASCII (outfile, *pclCloud);                     
+                state_ = STA_FAILED;
+                return nullptr;
+            }
         }
 
         //--------------------- 在原点云上 mincut ------
@@ -1945,159 +2520,494 @@ namespace pose_registration_plugins
         }
 
         printf("after segment, start registration\n");
-        /// registration
-        // 对点云进行平移, 激光中心和车体旋转中心
-        for (int i = 0; i < minoutcloud->points.size(); ++i)
+
+
+        if (using_regist_)
         {
-            minoutcloud->points[i].x = minoutcloud->points[i].x - lazer_motor_diff_;
-        }
-        Eigen::Vector3f registAngles;
-        double score;
-        std::vector<double> transxy;
-        Eigen::Matrix4f outmatrix;
-        if (!PclUtilities<pcl::PointXYZ>::regist_sacia_ndt(target_cloud_, minoutcloud,
-            registAngles, transxy, score, ndtsample_coeffs_, ndtmaxiter_, outmatrix, true))
-        {
-            state_ = STA_FAILED;
-            ROS_WARN("registration failed");
-            return nullptr;
-        }
-        
-        if (debug_visualize_)
-        {
+            /// registration
+            // 对点云进行平移, 激光中心和车体旋转中心
             for (int i = 0; i < minoutcloud->points.size(); ++i)
             {
-                minoutcloud->points[i].x = minoutcloud->points[i].x + lazer_motor_diff_;
-            }
-            pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
-            pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
-            pcl::PointCloud<pcl::PointXYZ>::Ptr targetoffset(new pcl::PointCloud<pcl::PointXYZ>);
-            *targetoffset = *target_cloud_;
-            for (int i = 0; i < targetoffset->points.size(); ++i)
-            {
-                targetoffset->points[i].x = targetoffset->points[i].x + lazer_motor_diff_;
+                minoutcloud->points[i].x = minoutcloud->points[i].x - lazer_motor_diff_;
             }            
-            viewer.viewCloud02(minoutcloud, "cur_features",
-                transcloud, "debug_features", target_cloud_, "target_features", targetoffset, "target_offset");
-        }
-        if (debug_count_ == 1 || debug_count_ == 3)
-        {
-            printf("debug_count_ == 1 or 3, outfile\n");
-            std::string outfile;
-            outfile = packpath_ + "/pcd/testgetseg.pcd";
-            pcl::io::savePCDFileASCII (outfile, *minoutcloud);
-            outfile = packpath_ + "/pcd/testgetall.pcd";
-            pcl::io::savePCDFileASCII (outfile, *pclCloud); 
-
-            if (debug_count_ == 1)
+            Eigen::Vector3f registAngles;
+            double score;
+            std::vector<double> transxy;
+            Eigen::Matrix4f outmatrix;
+            if (!PclUtilities<pcl::PointXYZ>::regist_sacia_ndt(target_cloud_, minoutcloud,
+                registAngles, transxy, score, ndtsample_coeffs_, ndtmaxiter_, outmatrix, true))
             {
-                state_ = STA_DONE;
+                state_ = STA_FAILED;
+                ROS_WARN("registration failed");
                 return nullptr;
             }
-        }
-
-        if (registAngles[2] > 0.5 * M_PI)
-        {
-            state_ = STA_FAILED;
-            printf("registangle > 0.5 pi, it is wrong, registration fail\n");
-            return nullptr;
-        }
-        
-        // 转换矩阵正常的情况
-        geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
-        if (fabs(registAngles[0]) < 0.02 && fabs(registAngles[1]) < 0.02)
-        {
-            // yaw aligned, move to done or linear alignment if there is
-            double transxyreal = transxy[0] - lazer_motor_diff_;
-            printf("transxyreal is: %f\n", transxyreal);
-            if ( (fabs(transxyreal) < regist_linear_x_thresh_ && fabs(transxy[1]) < regist_linear_y_thresh_)  &&
-                fabs(registAngles[2]) < regist_yaw_thresh_)
+            // registration 三次， 看是否收敛
+            if (debug_count_ == 6)
             {
-                printf("align right, next state\n");
-                printf("to STA_PRE_HORIZON\n");
-                state_ = STA_PRE_HORIZON;
+                Eigen::Matrix4f testoutmatrix;
+                testoutmatrix = outmatrix;
+                pcl::PointCloud<pcl::PointXYZ>::Ptr testminoutcloud(new pcl::PointCloud<pcl::PointXYZ>);
+                *testminoutcloud = *minoutcloud;
+                for (int test = 0; test < 3; test++)
+                {
+                    pcl::PointCloud<pcl::PointXYZ>::Ptr testcloud(new pcl::PointCloud<pcl::PointXYZ>) ;         // mark here by zhouyue, is it new testcloud
+                    pcl::transformPointCloud(*testminoutcloud, *testcloud, testoutmatrix);
+                    for (int i = 0; i < testcloud->points.size(); ++i)
+                    {
+                        testcloud->points[i].x = testcloud->points[i].x - lazer_motor_diff_;
+                    }
+                    printf("test regist_sacia_ndt start, test = %d ------------------------------------- \n",test+1);
+                    //Eigen::Matrix4f testoutmatrix;
+                    Eigen::Vector3f testregistAngles;
+                    std::vector<double> testtransxy;
+                    if (!PclUtilities<pcl::PointXYZ>::regist_sacia_ndt(target_cloud_, testcloud,
+                        testregistAngles, testtransxy, score, ndtsample_coeffs_, ndtmaxiter_, testoutmatrix, true))
+                    {
+                        state_ = STA_FAILED;
+                        ROS_WARN("registration failed");
+                        return nullptr;
+                    }
 
-                // add here by zhouyue for adjust last rot
-                /*
-                printf("first to STA_ADJUST_LAST_ROT\n");
+                    // assign testcloud 
+                    *testminoutcloud = *testcloud;
+                    double testtransxreal = testtransxy[0] - lazer_motor_diff_;
+                    printf("testtransxreal is: %f\n", testtransxreal);
+                    printf("test regist_sacia_ndt end -------------------------------------------- \n ");
+
+                    // --------------- out view  start -------------------------
+                    for (int i = 0; i < testminoutcloud->points.size(); ++i)
+                    {
+                        testminoutcloud->points[i].x = testminoutcloud->points[i].x + lazer_motor_diff_;
+                    }
+                    pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
+                    pcl::transformPointCloud(*testminoutcloud, *transcloud, testoutmatrix);
+                    pcl::PointCloud<pcl::PointXYZ>::Ptr targetoffset(new pcl::PointCloud<pcl::PointXYZ>);
+                    *targetoffset = *target_cloud_;
+                    for (int i = 0; i < targetoffset->points.size(); ++i)
+                    {
+                        targetoffset->points[i].x = targetoffset->points[i].x + lazer_motor_diff_;
+                    }            
+                    viewer.viewCloud02(testminoutcloud, "cur_features",
+                        transcloud, "debug_features", target_cloud_, "target_features", targetoffset, "target_offset");
+                    
+                    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+
+                    // 画完之后， 把x坐标再平移
+                    for (int i = 0; i < testminoutcloud->points.size(); ++i)
+                    {
+                        testminoutcloud->points[i].x = testminoutcloud->points[i].x - lazer_motor_diff_;
+                    }
+
+                    std::string screenfile;
+                    // operate_index_  test   testtransxy[1]   score
+                    std::ostringstream oss;
+                    oss << operate_index_ << "_test" << test << "_" ;
+
+                    oss << std::fixed << std::setprecision(5) << testtransxy[1];
+                    oss << "_";
+                    oss << std::fixed << std::setprecision(8) << score;
+                    std::string oss_str = oss.str();
+
+                    std::string localtime = getLocalTime();
+                    oss_str = localtime + "_" +oss_str + ".jpg";
+                    
+                    printf("oss_str is %s \n",oss_str.c_str());
+                    screenfile = packpath_ + "/outimages/"+ oss_str;
+
+                    getscreenImage(screenfile);
+                    
+                    // --------------- out view end -------------------------
+
+                    
+                }
+
+            }
+
+            
+            if (debug_visualize_)
+            {
+                for (int i = 0; i < minoutcloud->points.size(); ++i)
+                {
+                    minoutcloud->points[i].x = minoutcloud->points[i].x + lazer_motor_diff_;
+                }
+                pcl::PointCloud<pcl::PointXYZ>::Ptr transcloud(new pcl::PointCloud<pcl::PointXYZ>) ;
+                pcl::transformPointCloud(*minoutcloud, *transcloud, outmatrix);
+                pcl::PointCloud<pcl::PointXYZ>::Ptr targetoffset(new pcl::PointCloud<pcl::PointXYZ>);
+                *targetoffset = *target_cloud_;
+                for (int i = 0; i < targetoffset->points.size(); ++i)
+                {
+                    targetoffset->points[i].x = targetoffset->points[i].x + lazer_motor_diff_;
+                }            
+                viewer.viewCloud02(minoutcloud, "cur_features",
+                    transcloud, "debug_features", target_cloud_, "target_features", targetoffset, "target_offset");
+            }
+            if (debug_count_ == 1 || debug_count_ == 3)
+            {
+                printf("debug_count_ == 1 or 3, outfile\n");
+                std::string outfile;
+                outfile = packpath_ + "/pcd/testgetseg.pcd";
+                pcl::io::savePCDFileASCII (outfile, *minoutcloud);
+                outfile = packpath_ + "/pcd/testgetall.pcd";
+                pcl::io::savePCDFileASCII (outfile, *pclCloud); 
+
+                if (debug_count_ == 1)
+                {
+                    state_ = STA_DONE;
+                    return nullptr;
+                }
+            }
+
+            if (registAngles[2] > 0.5 * M_PI)
+            {
+                state_ = STA_FAILED;
+                printf("registangle > 0.5 pi, it is wrong, registration fail\n");
+                return nullptr;
+            }
+            
+            // 转换矩阵正常的情况
+            geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+            if (fabs(registAngles[0]) < 0.01 && fabs(registAngles[1]) < 0.01)
+            {
+                // yaw aligned, move to done or linear alignment if there is
+                double transxyreal = transxy[0] - lazer_motor_diff_;
+                printf("transxreal is: %f\n", transxyreal);
+                if ( (fabs(transxyreal) < regist_linear_x_thresh_ && fabs(transxy[1]) < regist_linear_y_thresh_)  &&
+                    fabs(registAngles[2]) < regist_yaw_thresh_)
+                {
+                    printf("align right, next state\n");
+                    printf("to STA_PRE_HORIZON\n");
+                    state_ = STA_PRE_HORIZON;
+
+                    // add here by zhouyue for adjust last rot
+                    /*
+                    printf("first to STA_ADJUST_LAST_ROT\n");
+                    double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                    pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
+                    angles::shortest_angular_distance(registAngles[2], angleBaselink));
+                    double yawFromImu = 0.0;
+                    {
+                        const std::lock_guard<std::mutex> lock(mtx_imu_);
+                        yawFromImu = angleyaw_imu_;
+                    }
+                    angle_target_imu_ = angles::shortest_angular_distance(registAngles[2], yawFromImu);
+                    state_ = STA_ADJUST_LAST_ROT;
+                    */
+                    return nullptr;
+                }
+
+                if (fabs(transxyreal) < 1.8 * regist_linear_x_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_y_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
+                {
+                    is_fine_tune_ = true;
+                }
+                else
+                {
+                    is_fine_tune_ = false;
+                }
+                registAngle_ = registAngles[2];
+                // otherwise, rotate to align
+                printf("%s\n", fabs(registAngles[2]) < regist_yaw_thresh_ ? 
+                    std::string("algin angle met").c_str() : std::string("algin angle unmet").c_str());
+
                 double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                // pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
                 pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
-                angles::shortest_angular_distance(registAngles[2], angleBaselink));
+                    angles::shortest_angular_distance(registAngles[2], angleBaselink));
                 double yawFromImu = 0.0;
                 {
                     const std::lock_guard<std::mutex> lock(mtx_imu_);
                     yawFromImu = angleyaw_imu_;
                 }
                 angle_target_imu_ = angles::shortest_angular_distance(registAngles[2], yawFromImu);
-                state_ = STA_ADJUST_LAST_ROT;
-                */
-                return nullptr;
-            }
+                printf("registration , angle_target_imu_ = %f, now yawFromImu = %f\n",
+                    angle_target_imu_, yawFromImu);
 
-            if (fabs(transxyreal) < 1.8 * regist_linear_x_thresh_ || fabs(transxy[1]) < 1.8 * regist_linear_y_thresh_ || fabs(registAngles[2]) < 1.8 * regist_yaw_thresh_ )
-            {
-                is_fine_tune_ = true;
+                angleDiff_g_ = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+                distance_vertical_ = transxy[0] - lazer_motor_diff_;
+                distance_horizon_ = transxy[1];
+                printf("distance_vertical = %f, distance_horizon_ = %f\n", distance_vertical_, distance_horizon_);
+
+                angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                updateCurrentPose(); 
+                pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
+
+                // new add , determine the process here 
+                if (fabs(registAngles[2]) < regist_yaw_thresh_)
+                {
+                    if (fabs(distance_horizon_) < distthresh_horizon_)
+                    {
+                        distance_todrive_ = distance_vertical_;
+                        state_ = STA_ADJUST_VERTICAL;
+
+                        printf("after registration, STA_ALIGN met, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
+                    }                    
+                    else
+                    {
+                        state_ = STA_PRE_ROT_ANGLE;
+                        printf("after registration, STA_ALIGN met, start STA_PRE_ROT_ANGLE\n");
+                    }
+
+                    return nullptr;
+                }
+
+                state_ = STA_ALIGN;
+
             }
             else
             {
-                is_fine_tune_ = false;
+                // 转换矩阵奇异的情况：
+                // 暂时设为失败，后面再改
+
+                state_ = STA_FAILED;
+                ROS_ERROR("process failed, registration failed");
             }
-            registAngle_ = registAngles[2];
-            // otherwise, rotate to align
-            printf("%s\n", fabs(registAngles[2]) < regist_yaw_thresh_ ? 
-                std::string("algin angle met").c_str() : std::string("algin angle unmet").c_str());
 
-            double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-            // pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink - registAngles[2]);
-            pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
-                angles::shortest_angular_distance(registAngles[2], angleBaselink));
-            double yawFromImu = 0.0;
+        }
+        else // else (not using_regist_)
+        {
+            pcl::PointXYZ minpointx;
+            minpointx.x = 2;
+            minpointx.y = 0;
+            minpointx.z = 0;
+
+            for (int i = 0; i < minoutcloud->points.size(); ++i)
             {
-                const std::lock_guard<std::mutex> lock(mtx_imu_);
-                yawFromImu = angleyaw_imu_;
+                if (minoutcloud->points[i].x < minpointx.x)
+                {
+                    minpointx.x = minoutcloud->points[i].x;
+                    minpointx.y = minoutcloud->points[i].y;
+                    minpointx.z = minoutcloud->points[i].z;
+                }
+            }    
+
+            // -------------------------test get ---------------
+            /*
+            std::string outfile;
+            outfile = packpath_ + "/pcd/get_minoutcloud.pcd";
+            pcl::io::savePCDFileASCII (outfile, *minoutcloud);   
+            */
+            // -------------------------test get end -----------
+
+            // view out points
+            pcl::PointCloud<pcl::PointXYZ>::Ptr getpoint(new pcl::PointCloud<pcl::PointXYZ>) ;
+            getpoint->push_back(minpointx);
+
+            std::vector< pcl::PointCloud<pcl::PointXYZ>::Ptr >  pointV;
+            pointV.push_back(minoutcloud);
+            pointV.push_back(getpoint);
+            std::vector< std::string > cloudIDV;
+            cloudIDV.push_back(std::string("minoutcloud"));
+            cloudIDV.push_back(std::string("getpoint"));
+            std::vector<int> PointSizeV;
+            PointSizeV.push_back(2);
+            PointSizeV.push_back(3);
+            
+            std::vector< std::array<double, 3> > PointColorV;
+            PointColorV.push_back({0.0, 0.0, 1.0});
+            PointColorV.push_back({1.0, 0.0, 0.0});
+
+            //viewer.addviewVector(pointV, cloudIDV, PointSizeV, PointColorV);  
+            
+            std::vector<pcl::ModelCoefficients> lines_coefficients;
+            std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array;
+            PclUtilities<pcl::PointXYZ>::fitMultipleLines(minoutcloud, lines_coefficients, point_cloud_array, fit_line_thresh_);
+            std::cout << "一共拟合出" << lines_coefficients.size() << "条直线，直线系数分别为：" << std::endl;
+
+            for (int i = 0; i< lines_coefficients.size(); i++)
+            {
+                printf("line%d: \n",i+1);
+                printf("LineCoeff:[%f,%f,%f,%f,%f,%f]\n", i+1, lines_coefficients[i].values[0], lines_coefficients[i].values[1], lines_coefficients[i].values[2],
+                    lines_coefficients[i].values[3], lines_coefficients[i].values[4], lines_coefficients[i].values[5]);
+
+                //printf("firstPoint is: [%f, %f, %f]\n", point_cloud_array[i]->points[0].x, point_cloud_array[i]->points[0].y, point_cloud_array[i]->points[0].z);
+                int mid = point_cloud_array[i]->size()/2;
+                //printf("midPoint is: [%f, %f, %f]\n", point_cloud_array[i]->points[mid].x, point_cloud_array[i]->points[mid].y, point_cloud_array[i]->points[mid].z);
+
+                double k, b, lineReg;
+                lineReg = 1.0;
+                lineReg = linearRegression(point_cloud_array[i]->points, k, b);
+                printf("linearRegression is: %f\n",lineReg);
+
             }
-            angle_target_imu_ = angles::shortest_angular_distance(registAngles[2], yawFromImu);
-            printf("registration , angle_target_imu_ = %f, now yawFromImu = %f\n",
-                angle_target_imu_, yawFromImu);
 
-            angleDiff_g_ = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
-            distance_vertical_ = transxy[0] - lazer_motor_diff_;
-            distance_horizon_ = transxy[1];
-            printf("distance_vertical = %f, distance_horizon_ = %f\n", distance_vertical_, distance_horizon_);
-
-            angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
-            updateCurrentPose(); 
-            pose_standby_.orientation = PoseUtilities::fromEuler(0.0, 0.0, angleBaselink);
-
-            // new add , determine the process here 
-            if (fabs(registAngles[2]) < regist_yaw_thresh_)
+            cloudIDV.resize(point_cloud_array.size());
+            for (auto i = 0; i< cloudIDV.size(); i++)
             {
-                if (fabs(distance_horizon_) < distthresh_horizon_)
-                {
-                    distance_todrive_ = distance_vertical_;
-                    state_ = STA_ADJUST_VERTICAL;
+                cloudIDV[i] = std::string("test_") + std::to_string(i);
+            }
+            PointSizeV.resize(point_cloud_array.size());
+            for (auto i = 0; i< PointSizeV.size(); i++)
+            {
+                PointSizeV[i] = 2;
+            }
+            PointColorV.resize(point_cloud_array.size());
+            std::array< std::array<double,3>, 10 > color_arr = {{
+                {0.0, 0.0, 1.0}, {1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {1.0, 0.0, 1.0}, {0.0, 1.0, 1.0},
+                {1.0, 1.0, 1.0}, {0.5, 0.5, 0.0}, {0.5, 0.0, 0.5}, {0.0, 0.5, 0.4}, {0.2, 0.2, 0.5}
+            }};
+            for (auto i = 0; i< PointColorV.size(); i++)
+            {
+                int index = (i) % 10;
+                PointColorV[i] = color_arr[index];
+            }
+            if (debug_visualize_)
+            {
+                viewer.addviewVector(point_cloud_array, cloudIDV, PointSizeV, PointColorV);
+            }
+            int horizon_index = 0;
+            int horizon_index2 = 0;
+            int cross_index = 0;
+            int cross_index2 = 0;
+            std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cloud_array_after;   //  unsymmetry 情况下需要先做欧氏分割
+            std::vector<pcl::ModelCoefficients> lines_coefficients_after;
 
-                    printf("after registration, STA_ALIGN met, direct to STA_ADJUST_VERTICAL, distance_todrive_=%f\n", distance_todrive_);
-                }                    
-                else
+            //if (target_shape_ == "unsymmetry")  
+            {
+                // 先进行 欧氏距离分割，将水平方向分割出来
+                double line_segment_distance_thresh = 0.1;      // set 0.1
+                int line_min_size = 3;
+                int line_max_size = 200;
+                for (int i = 0; i < point_cloud_array.size(); i++)
                 {
-                    state_ = STA_PRE_ROT_ANGLE;
-                    printf("after registration, STA_ALIGN met, start STA_PRE_ROT_ANGLE\n");
+                    std::vector<pcl::PointIndices> lineIndices;
+                    
+                    lineIndices = PclUtilities<pcl::PointXYZ>::segmentEuclidean(point_cloud_array[i],line_segment_distance_thresh, line_min_size, line_max_size);
+                    std::cout << "lineIndices.size() is: " << lineIndices.size() << std::endl;
+                    for (int i = 0; i < lineIndices.size(); ++i)
+                    {
+                        //std::cout << "feature " << i << " has points " << lineIndices[i].indices.size() << std::endl;
+                    }
+                    for (const auto& oneline : lineIndices)
+                    {
+                        pcl::PointCloud<pcl::PointXYZ>::Ptr onelinecloud(new pcl::PointCloud<pcl::PointXYZ>());
+                        PclUtilities<pcl::PointXYZ>::extractTo(point_cloud_array[i], oneline, onelinecloud);
+                        point_cloud_array_after.push_back(onelinecloud);
+
+                        pcl::ModelCoefficients lineCoff;
+                        PclUtilities<pcl::PointXYZ>::fitline(onelinecloud, lineCoff, fit_line_thresh_);
+                        lines_coefficients_after.push_back(lineCoff);
+                    }
+
                 }
 
-                return nullptr;
+                printf("after Eucli seg, point_cloud_array_after.size = %d \n",point_cloud_array_after.size());
+                printf("after Eucli , lines_coeff :\n");
+                for (int i = 0; i < lines_coefficients_after.size(); i++)
+                {
+                    printf("line_%d: \n",i);
+                    printf("fit line ,coeff is: %f, %f, %f, %f, %f, %f \n", lines_coefficients_after[i].values[0], lines_coefficients_after[i].values[1], lines_coefficients_after[i].values[2], lines_coefficients_after[i].values[3],
+                    lines_coefficients_after[i].values[4], lines_coefficients_after[i].values[5]);
+                    printf("line points is %d \n", point_cloud_array_after[i]->points.size());
+
+                }
+                int get_cross = PclUtilities<pcl::PointXYZ>::get_cross_line_unsymmetry(point_cloud_array_after, lines_coefficients_after, cross_angle_, cross_angle_tolerance_, cross_index, cross_index2);
+                if (get_cross == -1)
+                {
+                    printf("get_cross_line_unsymmetry error , please check \n");
+                    state_ = STA_FAILED;     
+                    return nullptr;
+                }
+
+                //int get_horizon = PclUtilities<pcl::PointXYZ>::get_horizon_line_unsymmetry(point_cloud_array_after, lines_coefficients_after, horizon_angle_tolerance_, cross_index, cross_index2, horizon_index, horizon_index2);
+                // 因为分割后的图形，有可能只有一条水平边， 换根据机械角度寻找水平边 
+
+                int cross1_size = point_cloud_array_after[cross_index]->points.size();
+                int cross2_size = point_cloud_array_after[cross_index2]->points.size();
+                int long_cross_index = cross1_size > cross2_size ? cross_index : cross_index2;
+                printf("long_cross_index is %d \n", long_cross_index);
+                int get_horizon = PclUtilities<pcl::PointXYZ>::get_horizon_line_unsymmetry_bycross(point_cloud_array_after, lines_coefficients_after, horizon_angle_, horizon_angle_tolerance_, long_cross_index, cross_index, cross_index2, horizon_index, horizon_index2);
+                if (get_horizon == -1)
+                {
+                    printf("get_horizon_line_unsymmetry_bycross error , please check \n");
+                    state_ = STA_FAILED;     
+                    return nullptr;
+                }
+
+                int horizon1_size = point_cloud_array_after[horizon_index]->points.size();
+                int horizon2_size = point_cloud_array_after[horizon_index2]->points.size();
+                horizon_index = horizon1_size > horizon2_size ? horizon_index : horizon_index2;
+
+            }
+            
+            // cal horizon rotate angle
+            double targetYaw = 0.0;
+            //if (target_shape_ == "unsymmetry")  
+            {
+                targetYaw = cal_horizon_angle(lines_coefficients_after, horizon_index);
             }
 
-            state_ = STA_ALIGN;
-        }
-        else
-        {
-            // 转换矩阵奇异的情况：
-            // 暂时设为失败，后面再改
 
-            state_ = STA_FAILED;
-            ROS_ERROR("process failed, registration failed");
-        }
+            printf("cal get targetYaw: %f\n", targetYaw);
+            //deg_target = targetYaw * 180.0 / M_PI ;
+
+            if (fabs(targetYaw) < regist_yaw_thresh_)
+            {   // 角度小于阈值，说明旋转完成，执行 x y 方向平移
+                std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> point_cross_array;
+                std::vector<pcl::ModelCoefficients> lines_cross_coeff;
+                int fitline_num = point_cloud_array.size();
+                //if (target_shape_ == "unsymmetry")
+                {
+                    for (int i = 0; i< point_cloud_array_after.size(); i++)
+                    {
+                        if (i == cross_index || i == cross_index2)
+                        {
+                            point_cross_array.push_back(point_cloud_array_after[i]);
+                            lines_cross_coeff.push_back(lines_coefficients_after[i]);
+                        }
+                    }
+                }
+
+                pcl::PointXYZ intersection;
+                int getintersec = PclUtilities<pcl::PointXYZ>::computeIntersection(lines_cross_coeff[0], lines_cross_coeff[1], intersection);
+                if (getintersec)
+                {
+                    
+                    printf("getintersec point :[%f, %f, %f]  \n", intersection.x, intersection.y, intersection.z);
+                }
+                else
+                {
+                    printf("getintersec error , maybe parallel ,maybe wrong\n");
+                }
+   
+                printf("target_pose_ is:[%f, %f] \n", target_pose_[0], target_pose_[1]);
+                // 方向与配准逻辑里一致 
+                distance_vertical_ = target_pose_[0] - intersection.x;
+                distance_horizon_ = target_pose_[1] - intersection.y;
+                printf("distance_vertical_ = %f, distance_horizon_ = %f \n", distance_vertical_, distance_horizon_);
+                // 判断是否在容差范围之内
+                if (fabs(distance_vertical_) < regist_linear_x_thresh_ && fabs(distance_horizon_) < regist_linear_y_thresh_ )
+                {
+                    printf("arrive at right point , to ADAPT_PRE_HORIZON \n");
+                    state_ = ADAPT_PRE_HORIZON;
+                }
+                else
+                {
+                    printf("not arrive , to ADAPT_PRE_ROT_ANGLE \n");
+                    state_ =  ADAPT_PRE_ROT_ANGLE;   // adjust
+                }
+
+            }
+            else
+            {
+                geometry_msgs::TransformStamped transBaselinkMap = listenTf(mapframe_.c_str(), base_link_frame_, ros::Time(0));
+                double angleBaselink = PoseUtilities::toEuler(transBaselinkMap.transform.rotation)[2];
+                pose_target_.orientation = PoseUtilities::fromEuler(0.0, 0.0,
+                    angles::shortest_angular_distance(targetYaw, angleBaselink));
+                double yawFromImu = 0.0;
+                {
+                    const std::lock_guard<std::mutex> lock(mtx_imu_);
+                    yawFromImu = angleyaw_imu_;
+                }
+                angle_target_imu_ = angles::shortest_angular_distance(targetYaw, yawFromImu);
+                angleDiff_g_ = angles::shortest_angular_distance(yawFromImu, angle_target_imu_);
+                printf("adapt , angle_target_imu_ = %f, now yawFromImu = %f\n",
+                    angle_target_imu_, yawFromImu);
+                printf("targetYaw not met, to ADAPT_FIRST_ROT \n");
+                state_ = ADAPT_FIRST_ROT;
+            }
+
+            //state_ = STA_DONE;
+
+        }// end if (using_regist_)
 
         printf("processing time: %f\n", (ros::Time::now() - begin).toSec());
 

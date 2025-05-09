@@ -451,7 +451,7 @@ namespace pose_registration_plugins
             {
                 angleDiff = angles::shortest_angular_distance(YawImu, angle_target_imu_);
             }       
-            if (fabs(angleDiff) < yaw_tolerance_)
+            if (fabs(angleDiff) < rot_back_yaw_tolerance_)
             {
                 CmdVel.linear.x = 0.0;
                 CmdVel.angular.z = 0.0;

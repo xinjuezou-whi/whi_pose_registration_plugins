@@ -81,11 +81,13 @@ namespace pose_registration_plugins
         STA_FAILED,
         STA_WAIT_SCAN,
         STA_DEBUG,
-        STA_CHARGE_WALK,
+
+        STA_CHARGE_WALK,        // CHARGE_WALK
         STA_CHARGE_PRE_ROT,
         STA_CHARGE_ROT,
         STA_CHARGE_HORIZON,
-        STA_OFFSET_YAW,
+
+        STA_OFFSET_YAW,         // OFFSET
         STA_OFFSET_ROTATING,
         STA_OFFSET_Y,
         STA_OFFSET_FORWARD,
@@ -126,6 +128,7 @@ namespace pose_registration_plugins
         void stateRegistration(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateOffset(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateStart(geometry_msgs::Twist& CmdVel, double YawImu);
+        void stateChargeWalk(geometry_msgs::Twist& CmdVel, double YawImu);
         void stateAdjust(geometry_msgs::Twist& CmdVel, double YawImu);
         void subCallbackLaserScan(const sensor_msgs::LaserScan::ConstPtr& Laser);
         void subCallbackImu(const sensor_msgs::Imu::ConstPtr& Imudata);
@@ -269,5 +272,7 @@ namespace pose_registration_plugins
         double horizon_angle_;
         double cross_angle_tolerance_;
         double horizon_angle_tolerance_;
+        int iteration_max_count_{ 0 };
+        int iteration_count_{ 0 };
     };
 } // namespace pose_registration_plugins

@@ -272,6 +272,7 @@ namespace pose_registration_plugins
         double horizon_angle_;
         double cross_angle_tolerance_;
         double horizon_angle_tolerance_;
+        double max_horizon_tolerance_{ 0.08 };
         int iteration_max_count_{ 0 };
         int iteration_count_{ 0 };
     };

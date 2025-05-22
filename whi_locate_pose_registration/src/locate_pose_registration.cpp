@@ -328,6 +328,7 @@ namespace pose_registration_plugins
         node_handle_->param("pose_registration/LocatePose/cross_angle_tolerance", cross_angle_tolerance_, 10.0);
         node_handle_->param("pose_registration/LocatePose/horizon_angle_tolerance", horizon_angle_tolerance_, 10.0);
         node_handle_->param("pose_registration/LocatePose/iteration_max_count", iteration_max_count_, 0);
+        node_handle_->param("pose_registration/LocatePose/max_horizon_tolerance", max_horizon_tolerance_, 0.08);
         rot_back_yaw_tolerance_ = angles::from_degrees(rot_back_yaw_tolerance_); 
         sub_laser_scan_ = std::make_unique<ros::Subscriber>(node_handle_->subscribe<sensor_msgs::LaserScan>(
 		    laserScanTopic, 10, std::bind(&LocatePoseRegistration::subCallbackLaserScan, this, std::placeholders::_1)));
@@ -392,7 +393,7 @@ namespace pose_registration_plugins
         }
         else if (Goal->target_pose.header.frame_id == "plan_start") // flag of move offset
         {
-            ROS_INFO("start plan_start");
+            //ROS_INFO("start plan_start");
             bool needStartBack = false;
             needStartBack = checkCurpointNearCharge();
             if (needStartBack)
@@ -2994,8 +2995,8 @@ namespace pose_registration_plugins
                 distance_vertical_ = target_pose_[0] - intersection.x;
                 distance_horizon_ = target_pose_[1] - intersection.y;
                 printf("distance_vertical_ = %f, distance_horizon_ = %f \n", distance_vertical_, distance_horizon_);
-
-                if (iteration_count_ >= iteration_max_count_ && iteration_max_count_ > 0 && fabs(distance_horizon_) < 0.1 )
+                
+                if (iteration_count_ >= iteration_max_count_ && iteration_max_count_ > 0 && fabs(distance_horizon_) < max_horizon_tolerance_ )
                 {
                     printf("iteration_count_ >= iteration_max_count_ , not iteration , to ADAPT_PRE_HORIZON \n");
                     state_ = ADAPT_PRE_HORIZON;

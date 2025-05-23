@@ -2433,15 +2433,30 @@ namespace pose_registration_plugins
             geometry_msgs::Pose centerpoint;
             centerpoint.position.x = center.x;
             centerpoint.position.y = center.y;
-            double center_dist = PoseUtilities::distance(originpose,centerpoint);
-            double dis_from_feature = fabs(center_dist - pose_feature_.position.x);  // 应该是最接近标志物的距离,从配置中读取的标志物距离
-            if(dis_from_feature < center_dist_min)
+            if (using_regist_)  
             {
-                center_dist_min = dis_from_feature;
-                *outcloud = *oneiter ;
+                double center_dist = PoseUtilities::distance(originpose,centerpoint);
+                double dis_from_feature = fabs(center_dist - pose_feature_.position.x);  // 应该是最接近标志物的距离,从配置中读取的标志物距离
+                if(dis_from_feature < center_dist_min)
+                {
+                    center_dist_min = dis_from_feature;
+                    *outcloud = *oneiter ;
+                }
             }
+            else
+            {
+                double center_dist = PoseUtilities::distance(originpose,centerpoint);
+                double dis_from_feature = center_dist;  // 取最近的即可, 根据坐标运算
+                if(dis_from_feature < center_dist_min)
+                {
+                    printf("get one center_dist_min, this center_dist_min = %f  \n",dis_from_feature);
+                    center_dist_min = dis_from_feature;
+                    *outcloud = *oneiter ;
+                }
+            }
+
         }
-        
+        printf("get center_dist_min finish,center_dist_min = %f \n",center_dist_min);
         if (outcloud->points.empty())
         {
             state_ = STA_FAILED;               
